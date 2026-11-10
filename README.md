@@ -10,14 +10,16 @@ scope; investment portfolio management and FIRE calculations are later areas.
 
 - [Product needs and Budget v1 scope](docs/product-scope.md) — user needs, monthly
   workflow, planning rules, category settings, buffers and first-version limits.
+- [Budget v1 user journey and acceptance criteria](docs/budget-v1-user-journey.md) —
+  setup, regular updates, reporting and worked acceptance examples.
 
 The `docs/` directory is the main source of project documentation. Changes are
 recorded in Git; the Wiki is reserved for possible future use.
 
 ## Current stage
 
-Product requirements are agreed. User-flow validation, acceptance criteria and
-screen sketches come before implementation and technology selection.
+Product requirements are agreed. The user journey and acceptance examples are
+recorded for review; screen sketches precede implementation and technology selection.
 
 ## Earlier implementation
 

@@ -67,12 +67,18 @@ portfolio management and FIRE calculations are later product areas.
   must total 100% of the discretionary budget.
 - Changes to planning income or allocation rules apply to the current and future
   months. Previously recorded plans for past months remain unchanged.
+- Saving each month of relevant previous-year expense history automatically
+  recalculates current and future plans. Months not yet entered count as zero;
+  no separate confirmation or history-completion step is required. Previously
+  recorded past plans remain unchanged.
 
 ## Category buffers
 
-A category buffer accumulates its monthly plan minus actual spending across
-the recorded history. Both savings and overspending carry between months and
-across year boundaries.
+The buffer shown for a selected month is carried in from recorded earlier,
+completed months: their saved plans minus actual spending. It excludes the
+selected month. That month's remaining amount is its own plan minus actual
+spending, shown separately. Both savings and overspending carry between months
+and across year boundaries; future planned months are not accumulated savings.
 
 The monthly plan and buffer remain separate. In a synthetic example, spending
 12,000 against a plan of 10,000 produces a buffer of -2,000; the next month's
@@ -81,6 +87,26 @@ a monthly plan can remain within the accumulated budget.
 
 Starting buffers are calculated from manually entered historical monthly plans
 and actual amounts, rather than entered as standalone opening balances.
+
+## First use, saving and review
+
+A user can start with the current month and add historical monthly plans and
+actual amounts later. Buffers initially reflect only the recorded earlier plans;
+current rules are not backfilled into months without historical plans.
+
+Monthly edits are committed with one explicit Save action. Calculated totals,
+remaining amounts, buffers and reports use saved values and update only after
+successful saving. Unentered actual amounts count as zero.
+
+The yearly overview contains monthly income, spending and investment amounts,
+plan comparisons, category totals and accumulated buffers. Actual averages use
+only completed calendar months of the selected year: January through the month
+before the current month for the current year, and all twelve months for a
+completed past year. Unentered amounts within those months count as zero.
+Yearly actual totals also include saved amounts from the current month.
+
+The [user journey and acceptance criteria](budget-v1-user-journey.md) describe
+the workflow, worked examples and separately identified UX recommendations.
 
 ## First-version boundary
 
