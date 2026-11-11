@@ -1,11 +1,26 @@
 # Finance Lab: product needs and Budget v1 scope
 
-Date: 2026-11-10. Status: agreed product requirements; delivery approach and
+Date: 2026-11-11. Status: agreed product requirements; delivery approach and
 technology choices remain open.
 
 This document records the agreed product needs and Budget v1 boundary for this
 repository. Product documentation is maintained in `docs/`, with navigation from
 the [README](../README.md).
+
+## Market, language and currency
+
+The application targets the Russian market. Version one provides a fully Russian
+interface: application labels, actions, month names, validation messages, errors,
+empty states and report headings are in Russian. An English interface and
+language switcher are outside the first-version scope.
+
+RUB is the default and only budget currency in version one. Present amounts in
+Russian notation, for example 1 234,56 ₽. Multi-currency support is deferred to a
+later version.
+
+Use [Google Material Design](https://m3.material.io/) as the primary UI/UX
+reference, with Google's guidance on clear, task-oriented interface text.
+This guides interaction and screen design; implementation choices remain open.
 
 ## User, problem and outcome
 
@@ -94,9 +109,9 @@ A user can start with the current month and add historical monthly plans and
 actual amounts later. Buffers initially reflect only the recorded earlier plans;
 current rules are not backfilled into months without historical plans.
 
-Monthly edits are committed with one explicit Save action. Calculated totals,
-remaining amounts, buffers and reports use saved values and update only after
-successful saving. Unentered actual amounts count as zero.
+Monthly edits are committed with one explicit **Сохранить** (Save) action.
+Calculated totals, remaining amounts, buffers and reports use saved values and
+update only after successful saving. Unentered actual amounts count as zero.
 
 The yearly overview contains monthly income, spending and investment amounts,
 plan comparisons, category totals and accumulated buffers. Actual averages use

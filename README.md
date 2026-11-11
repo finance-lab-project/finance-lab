@@ -6,6 +6,10 @@ spending and investment contributions, with monthly and yearly review.
 This repository contains the new product iteration. Budget is the first-version
 scope; investment portfolio management and FIRE calculations are later areas.
 
+The first version targets the Russian market: a Russian-only interface and RUB
+budgets. Multi-currency support is later work. Google's Material Design is the
+primary reference for UI/UX decisions.
+
 ## Documentation
 
 - [Product needs and Budget v1 scope](docs/product-scope.md) — user needs, monthly

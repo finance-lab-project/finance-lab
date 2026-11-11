@@ -1,11 +1,11 @@
 # Budget v1: user journey and acceptance criteria
 
-Date: 2026-11-10. Related work: [issue #1](https://github.com/finance-lab-project/finance-lab/issues/1).
+Date: 2026-11-11. Related work: [issue #1](https://github.com/finance-lab-project/finance-lab/issues/1).
 
 The [product scope](product-scope.md) is the source of agreed requirements.
-This document records the clarified user journey and checkable examples.
-The unsaved-navigation interaction below is a UX recommendation for review.
-Screen layout, implementation and technologies are separate work.
+This document records the clarified user journey, checkable examples and the
+approved unsaved-navigation interaction. The first version uses a Russian-only
+interface and RUB. Screen layout, implementation and technologies are separate work.
 
 ## User and successful session
 
@@ -49,7 +49,7 @@ month's save can change the current plan. There is no extra approval or
    enter cumulative actual income and investment contributions.
 3. Until Save, calculated figures remain based on the last saved values.
    Editing actual income does not change the separate planning-income baseline.
-4. Press Save once for the edited month.
+4. Select **Сохранить** once for the edited month.
 5. After successful saving, read the updated plan/actual figures, monthly
    remaining amounts and relevant reports. The selected month's spending does
    not alter its carried-in buffer; it contributes to later months' buffers.
@@ -71,8 +71,9 @@ month's save can change the current plan. There is no extra approval or
   month, excluding the current month from both the numerator and denominator.
   For a completed past year, averages use all twelve months.
 - If there are no completed months, no numeric average can be calculated.
-  Recommended presentation: explain "No completed months yet" instead of
-  displaying a division error or treating an undefined average as a real zero.
+  Explain in Russian that no completed-month average is available, for example
+  "Нет завершённых месяцев", instead of displaying a division error or treating
+  an undefined average as a real zero.
 - A yearly buffer is the accumulated balance at the report's completed-month
   cutoff, including carry from earlier years. It is not the sum of monthly
   opening buffers.
@@ -82,9 +83,11 @@ month's save can change the current plan. There is no extra approval or
 
 ## Worked example
 
-All figures below are synthetic. Assume the review date is 15 March 2027.
-The fixture includes history entered after starting; that history is not a
-prerequisite for the first current-month session.
+All figures below are synthetic RUB amounts. Comma-grouped values in these
+English documentation tables specify amounts, rather than the final interface
+format; the application uses Russian monetary presentation. Assume the review
+date is 15 March 2027. The fixture includes history entered after starting; that
+history is not a prerequisite for the first current-month session.
 
 ### Planning inputs and history
 
@@ -169,22 +172,23 @@ Each example starts from the fixture above unless stated otherwise.
 | AC-11 | Independently of AC-10, change planning income to 120,000 in March, keeping needs 40,000 and target 40%. | March/future investments become 48,000 and discretionary budget 32,000. January/February plans stay unchanged. With these plans through December, annual spending plan is 840,000 and investment plan 560,000. |
 | AC-12 | Save each month while backfilling relevant previous-year history. | Dependent current/future plans recalculate after every successful month save, using zero for still-unentered actuals; no history-completion confirmation is required. |
 | AC-13 | Follow the journey in a browser on a computer or phone. | All required inputs, period selection, Save and reports are reachable; the same saved month is available across devices. |
+| AC-14 | Open a budget, edit amounts and inspect month/year reports. | All application-provided text and month names are Russian; monetary amounts use RUB and Russian notation, for example 1 234,56 ₽. English switching and other budget currencies are outside v1. |
 
-## Recommended handling of unsaved navigation
+## Agreed handling of unsaved navigation
 
-This interaction is a UX recommendation for review, following the user's choice
-of one explicit Save action. It is not an additional autosave requirement.
+The user approved this interaction for the workflow with one explicit Save
+action. It preserves the choice to save, discard edits or continue editing.
 
 When a different month/year is requested and there are unsaved edits, ask whether
 to save before switching. Use explicit action labels rather than "Yes" and "No".
 
-| Recommended action label | Outcome |
+| Action label | Outcome |
 | --- | --- |
-| Сохранить и перейти | Save the edited month and switch to the requested period only after successful saving. |
-| Перейти без сохранения | Discard only the unsaved edits and switch; previously saved data remains intact. |
-| Остаться | Cancel switching and keep the edited values in the current month. |
+| **Сохранить и перейти** | Save the edited month and switch to the requested period only after successful saving. |
+| **Перейти без сохранения** | Discard only the unsaved edits and switch; previously saved data remains intact. |
+| **Остаться** | Cancel switching and keep the edited values in the current month. |
 
-Recommended acceptance checks:
+Acceptance checks:
 
 - With no unsaved edits, switching needs no confirmation.
 - Closing the prompt or pressing Escape behaves like "Остаться".
@@ -193,17 +197,20 @@ Recommended acceptance checks:
 - A visible indication distinguishes unsaved edits from figures based on the
   last successful Save.
 
-These recommendations use the general guidance to provide clear action labels
-and a safe non-destructive exit, and to reserve interrupting dialogs for
-consequential choices: [Microsoft dialog guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs)
-and [Carbon modal guidance](https://www.carbondesignsystem.com/building-blocks/core/components/modal/guidelines).
+Google guidance is the primary UI/UX reference:
+[Material Design dialog guidelines](https://m3.material.io/components/dialogs/guidelines),
+[Google's dialog guidance](https://developer.android.com/develop/ui/views/components/dialogs?hl=en)
+for decision prompts, and
+[Google's UI elements and interaction guide](https://developers.google.com/style/ui-elements)
+for clear labels and task-oriented instructions. These references inform the
+screen design while preserving the agreed navigation outcomes.
 
 ## Review points and boundary
 
-The business rules above follow the recorded decisions. The unsaved-navigation
-interaction and wording for an unavailable completed-month average are
-recommendations to review with the screen sketches. Monetary rounding for
-fractional allocations is not resolved by these exact-value examples.
+The business and unsaved-navigation rules above follow the recorded decisions.
+Wording and layout can be refined with the screen sketches while preserving
+those outcomes and the Russian-only interface. Monetary rounding for fractional
+allocations is not resolved by these exact-value examples.
 
 This document does not select technologies or implement screens, imports,
 individual transactions, portfolio management or FIRE.
