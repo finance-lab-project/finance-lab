@@ -15,7 +15,7 @@ empty states and report headings are in Russian. An English interface and
 language switcher are outside the first-version scope.
 
 RUB is the default and only budget currency in version one. Present amounts in
-Russian notation, for example 1 234,56 ₽. Multi-currency support is deferred to a
+Russian notation without kopecks, for example 1 234 ₽. Multi-currency support is deferred to a
 later version.
 
 Use [Google Material Design](https://m3.material.io/) as the primary UI/UX
@@ -86,6 +86,47 @@ portfolio management and FIRE calculations are later product areas.
   recalculates current and future plans. Months not yet entered count as zero;
   no separate confirmation or history-completion step is required. Previously
   recorded past plans remain unchanged.
+
+## Whole-ruble amounts and allocation
+
+Whole RUB is the agreed monetary precision for v1: entered amounts, saved
+monthly plans and displayed monetary figures have no kopecks. A non-zero
+fractional monetary input is explained as invalid rather than silently rounded.
+Percentage shares can be fractional; monetary precision does not round shares.
+
+The following calculation detail is the proposed v1 rule for review:
+
+1. Keep intermediate averages and percentage quotas unrounded until an integer
+   monetary amount is needed. Round a single calculated amount to the nearest
+   ruble; an exact half ruble rounds away from zero (10.5 becomes 11, -10.5
+   becomes -11).
+2. Round each essential category's calculated monthly average once to obtain
+   its whole-ruble plan. Essential needs are the sum of those category plans.
+3. Round the investment target amount once, then cap it at the whole-ruble
+   amount left after essential needs, down to zero. Compute the discretionary
+   budget as the exact remainder of planning income minus essential needs and
+   planned investments.
+4. For valid nonnegative discretionary shares totalling 100%, calculate each
+   category's exact share of the discretionary budget and first take its whole
+   part. Assign the remaining rubles one at a time to categories with the largest
+   discarded fractional parts. If parts are equal, the earlier-added category
+   receives the ruble first. Renaming a category or reopening the budget does
+   not change this tie order.
+5. A zero discretionary budget gives zero to every discretionary category.
+   Invalid percentage totals are still rejected, not repaired by rounding.
+
+When income covers essential needs, the saved essential plans, investments and
+discretionary category plans add up exactly to planning income. If essential
+needs exceed income, retain the existing shortfall behaviour instead of forcing
+a balance through negative or reduced essential-category amounts.
+
+Totals and buffers use the saved whole-ruble amounts. Statistical averages are
+rounded only for presentation; totals are not built by adding rounded averages.
+A displayed average may therefore differ from a sum of independently rounded
+category averages. Rounding does not change entered actuals or past saved plans.
+The allocation remainder is not an extra expense, income or carried buffer.
+
+This is a v1 RUB rule. Multi-currency precision remains later work.
 
 ## Category buffers
 

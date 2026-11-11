@@ -5,7 +5,7 @@ Date: 2026-11-11. Related work: [issue #1](https://github.com/finance-lab-projec
 The [product scope](product-scope.md) is the source of agreed requirements.
 This document records the clarified user journey, checkable examples and the
 approved unsaved-navigation interaction. The first version uses a Russian-only
-interface and RUB. Screen layout, implementation and technologies are separate work.
+interface and whole-ruble RUB amounts. Screen layout, implementation and technologies are separate work.
 
 ## User and successful session
 
@@ -153,6 +153,43 @@ to averages on the assumed review date. Unentered April–December actuals are z
 | Leisure | 25,000 | 12,000 |
 | Travel | 11,000 | 5,500 |
 
+### Whole-ruble rounding examples
+
+Whole-ruble precision follows the user's existing workflow. The calculation
+detail below is proposed for review with the
+[whole-ruble rule](product-scope.md#whole-ruble-amounts-and-allocation).
+
+A discretionary budget of 100 RUB is split by 33.3% / 33.3% / 33.4%.
+Fractional quotas below are intermediate calculations, not saved plans or
+monetary input/display values.
+
+| Category, in addition order | Share | Exact quota | Saved plan, RUB |
+| --- | ---: | ---: | ---: |
+| A | 33.3% | 33.3 | 33 |
+| B | 33.3% | 33.3 | 33 |
+| C | 33.4% | 33.4 | 34 |
+| Total | 100% | 100 | 100 |
+
+Taking the whole parts first gives 99 RUB. The remaining ruble goes to C,
+which has the largest discarded fraction. For 7 RUB split equally between A
+and B, both fractions are 0.5: addition order gives A 4 RUB and B 3 RUB.
+Repeated calculation and category renaming keep that outcome.
+
+For one essential category with 366 RUB of previous-year expenses, the exact
+monthly average is 30.5 RUB and its planned amount is 31 RUB. With planning
+income of 101 RUB and an investment target of 50%, the rounded investment
+target is 51 RUB and the discretionary remainder is 19 RUB. The fixture's
+60% / 40% shares give Leisure 11 RUB and Travel 8 RUB. The saved plan reconciles:
+31 + 51 + 11 + 8 = 101 RUB. Actual historical expenses remain 366 RUB.
+
+Statistics follow the same nearest-ruble presentation rule but use original
+totals: actuals of 10 and 11 RUB total 21 RUB, and their 10.5 RUB average is
+displayed as 11 RUB. The displayed average is not used to reconstruct the total.
+
+The residual assignment is a
+[largest-remainder allocation](https://www.census.gov/about/history/historical-censuses-and-surveys/census-programs-surveys/decennial-census/methods.html),
+applied here to integer rubles.
+
 ## Acceptance examples
 
 Each example starts from the fixture above unless stated otherwise.
@@ -172,7 +209,11 @@ Each example starts from the fixture above unless stated otherwise.
 | AC-11 | Independently of AC-10, change planning income to 120,000 in March, keeping needs 40,000 and target 40%. | March/future investments become 48,000 and discretionary budget 32,000. January/February plans stay unchanged. With these plans through December, annual spending plan is 840,000 and investment plan 560,000. |
 | AC-12 | Save each month while backfilling relevant previous-year history. | Dependent current/future plans recalculate after every successful month save, using zero for still-unentered actuals; no history-completion confirmation is required. |
 | AC-13 | Follow the journey in a browser on a computer or phone. | All required inputs, period selection, Save and reports are reachable; the same saved month is available across devices. |
-| AC-14 | Open a budget, edit amounts and inspect month/year reports. | All application-provided text and month names are Russian; monetary amounts use RUB and Russian notation, for example 1 234,56 ₽. English switching and other budget currencies are outside v1. |
+| AC-14 | Open a budget, edit amounts and inspect month/year reports. | All application-provided text and month names are Russian; monetary amounts use RUB and Russian notation, for example 1 234 ₽. English switching and other budget currencies are outside v1. |
+| AC-15 | Enter a monetary value with non-zero kopecks, such as the Russian input `1234,50`. | Saving explains in Russian that a whole-ruble amount is required; the input is not silently rounded and the previous saved amount remains intact. |
+| AC-16 | Allocate 100 RUB by valid shares of 33.3%, 33.3% and 33.4%. | Category plans are 33, 33 and 34 RUB and total exactly 100 RUB; no separate rounding balance is created. |
+| AC-17 | Allocate 7 RUB equally between A and later-added B, then repeat the calculation or rename A. | Plans remain A 4 RUB / B 3 RUB. With a zero discretionary budget, every category plan is zero. |
+| AC-18 | One essential category has 366 RUB of previous-year expenses; planning income is 101 RUB and the investment target is 50%. | The essential plan is 31 RUB, investments 51 RUB and the discretionary remainder 19 RUB, split 11/8 RUB by the fixture's 60%/40% shares; the complete allocation is 101 RUB and historical actuals remain 366 RUB. |
 
 ## Agreed handling of unsaved navigation
 
@@ -208,9 +249,10 @@ screen design while preserving the agreed navigation outcomes.
 ## Review points and boundary
 
 The business and unsaved-navigation rules above follow the recorded decisions.
-Wording and layout can be refined with the screen sketches while preserving
-those outcomes and the Russian-only interface. Monetary rounding for fractional
-allocations is not resolved by these exact-value examples.
+Whole-ruble precision is agreed; the explicit rounding and residual-allocation
+rule is proposed for review in this PR rather than left unspecified. Wording
+and layout can be refined with the screen sketches while preserving those
+outcomes and the Russian-only interface.
 
 This document does not select technologies or implement screens, imports,
 individual transactions, portfolio management or FIRE.
