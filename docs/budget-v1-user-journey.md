@@ -156,7 +156,7 @@ to averages on the assumed review date. Unentered April–December actuals are z
 ### Whole-ruble rounding examples
 
 Whole-ruble precision follows the user's existing workflow. The calculation
-detail below is proposed for review with the
+detail below follows the agreed
 [whole-ruble rule](product-scope.md#whole-ruble-amounts-and-allocation).
 
 A discretionary budget of 100 RUB is split by 33.3% / 33.3% / 33.4%.
@@ -246,11 +246,10 @@ for decision prompts, and
 for clear labels and task-oriented instructions. These references inform the
 screen design while preserving the agreed navigation outcomes.
 
-## Review points and boundary
+## Boundary
 
-The business and unsaved-navigation rules above follow the recorded decisions.
-Whole-ruble precision is agreed; the explicit rounding and residual-allocation
-rule is proposed for review in this PR rather than left unspecified. Wording
+The business, unsaved-navigation and whole-ruble rounding rules above are agreed.
+No product questions remain open within issue #1's documented scope. Wording
 and layout can be refined with the screen sketches while preserving those
 outcomes and the Russian-only interface.
 

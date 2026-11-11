@@ -94,7 +94,7 @@ monthly plans and displayed monetary figures have no kopecks. A non-zero
 fractional monetary input is explained as invalid rather than silently rounded.
 Percentage shares can be fractional; monetary precision does not round shares.
 
-The following calculation detail is the proposed v1 rule for review:
+The following calculation detail is the agreed v1 rule:
 
 1. Keep intermediate averages and percentage quotas unrounded until an integer
    monetary amount is needed. Round a single calculated amount to the nearest
@@ -136,10 +136,11 @@ selected month. That month's remaining amount is its own plan minus actual
 spending, shown separately. Both savings and overspending carry between months
 and across year boundaries; future planned months are not accumulated savings.
 
-The monthly plan and buffer remain separate. In a synthetic example, spending
-12,000 against a plan of 10,000 produces a buffer of -2,000; the next month's
-plan stays 10,000. Accumulated savings can likewise explain how spending above
-a monthly plan can remain within the accumulated budget.
+The monthly plan and buffer remain separate. In a synthetic example with no
+earlier carry, a completed month's spending of 12,000 against a plan of 10,000
+leaves -2,000 carried into the following month; that next month's plan stays
+10,000. Accumulated savings can likewise explain how spending above a monthly
+plan can remain within the accumulated budget.
 
 Starting buffers are calculated from manually entered historical monthly plans
 and actual amounts, rather than entered as standalone opening balances.
@@ -162,7 +163,7 @@ completed past year. Unentered amounts within those months count as zero.
 Yearly actual totals also include saved amounts from the current month.
 
 The [user journey and acceptance criteria](budget-v1-user-journey.md) describe
-the workflow, worked examples and separately identified UX recommendations.
+the workflow, worked examples and agreed interaction rules.
 
 ## First-version boundary
 

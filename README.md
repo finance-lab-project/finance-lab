@@ -22,8 +22,8 @@ recorded in Git; the Wiki is reserved for possible future use.
 
 ## Current stage
 
-Product requirements are agreed. The user journey and acceptance examples are
-recorded for review; screen sketches precede implementation and technology selection.
+Product requirements, the user journey and acceptance criteria are agreed.
+Screen sketches precede implementation and technology selection.
 
 ## Earlier implementation
 
