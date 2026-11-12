@@ -16,6 +16,8 @@ Google's Material Design is the primary reference for UI/UX decisions.
   workflow, planning rules, category settings, buffers and first-version limits.
 - [Budget v1 user journey and acceptance criteria](docs/budget-v1-user-journey.md) —
   setup, regular updates, reporting and worked acceptance examples.
+- [Budget v1 screens and navigation](docs/budget-v1-screen-sketches.md) — final
+  desktop designs, phone sketches, states and links to the public Figma file.
 
 The `docs/` directory is the main source of project documentation. Changes are
 recorded in Git; the Wiki is reserved for possible future use.
@@ -23,7 +25,9 @@ recorded in Git; the Wiki is reserved for possible future use.
 ## Current stage
 
 Product requirements, the user journey and acceptance criteria are agreed.
-Screen sketches precede implementation and technology selection.
+Budget v1 desktop designs are approved; phone layouts and interaction states are
+recorded as sketches. See the screen documentation above for the agreed flows.
+Implementation and technology selection follow this design stage.
 
 ## Earlier implementation
 
