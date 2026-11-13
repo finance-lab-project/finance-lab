@@ -18,6 +18,8 @@ Google's Material Design is the primary reference for UI/UX decisions.
   setup, regular updates, reporting and worked acceptance examples.
 - [Budget v1 screens and navigation](docs/budget-v1-screen-sketches.md) — final
   desktop designs, phone sketches, states and links to the public Figma file.
+- [Budget v1 prototype walkthrough](docs/budget-v1-prototype-review.md) — desktop and
+  phone review tasks, expected results and participant feedback status.
 
 The `docs/` directory is the main source of project documentation. Changes are
 recorded in Git; the Wiki is reserved for possible future use.
