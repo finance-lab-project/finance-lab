@@ -1,0 +1,14 @@
+{
+  "properties": [
+    {
+      "name": "budget.owner-a-password",
+      "type": "java.lang.String",
+      "description": "Password for the synthetic owner-a account."
+    },
+    {
+      "name": "budget.owner-b-password",
+      "type": "java.lang.String",
+      "description": "Password for the synthetic owner-b account."
+    }
+  ]
+}

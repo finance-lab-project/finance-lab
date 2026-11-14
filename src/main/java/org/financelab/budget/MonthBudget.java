@@ -24,19 +24,19 @@ public record MonthBudget(List<Category> categories) {
      * @throws java.util.NoSuchElementException if the snapshot has no food category
      */
     public Category food() {
-        return categories.stream().filter(Category::isFood).findFirst().orElseThrow();
+        return categories.stream().filter(row -> row.isFood()).findFirst().orElseThrow();
     }
 
     /** {@return the sum of the monthly plans, in whole rubles} */
     public BigInteger totalPlan() {
         return categories.stream().map(row -> BigInteger.valueOf(row.plan()))
-                .reduce(BigInteger.ZERO, BigInteger::add);
+                .reduce(BigInteger.ZERO, (total, amount) -> total.add(amount));
     }
 
     /** {@return total saved spending across the categories, in whole rubles} */
     public BigInteger totalSpending() {
         return categories.stream().map(row -> BigInteger.valueOf(row.actual()))
-                .reduce(BigInteger.ZERO, BigInteger::add);
+                .reduce(BigInteger.ZERO, (total, amount) -> total.add(amount));
     }
 
     /**
