@@ -21,7 +21,9 @@ The regular task is a periodic replacement of monthly totals. One set of respons
 | Operating cost | One running host with persistent disk plus backup storage. The database runs inside the application process. | The database can share the app host, costing memory and operator time. A managed instance has its own service cost. |
 | When to choose it | One application instance owns durable local storage and short writes are infrequent. | Prefer this option if the host offers only ephemeral app storage but already provides durable PostgreSQL, or concurrent writes routinely block saves. |
 
-The recommendation assumes both devices can reach the app when saving. A disconnected form can keep its draft in the open page and offer a retry. Durable offline edits across browser restarts would change the client design and need a separate user decision. The target host and its disk are unconfirmed. The first check can use two devices on the same private network with synthetic data. Host and backup costs depend on the eventual operating arrangement. [Spring MVC and templates](https://spring.io/guides/gs/serving-web-content) · [SQLite deployment trade-offs](https://sqlite.org/whentouse.html) · [PostgreSQL architecture](https://www.postgresql.org/docs/current/tutorial-arch.html)
+**Confirmed for v1: online use only.** Each device must be able to reach the server to open a budget or save changes. Keeping one authoritative copy on the server avoids a persistent offline draft, a queue of pending saves and background synchronization. If a connection drops during editing, keep the input in the open form and let the user retry after reconnecting. Confirm success only after the server acknowledges the save.
+
+The target host and its disk are unconfirmed. The first check can use two devices on the same private network with synthetic data. Host and backup costs depend on the eventual operating arrangement. [Spring MVC and templates](https://spring.io/guides/gs/serving-web-content) · [SQLite deployment trade-offs](https://sqlite.org/whentouse.html) · [PostgreSQL architecture](https://www.postgresql.org/docs/current/tutorial-arch.html)
 
 ## Responsibilities within the application
 
@@ -38,7 +40,8 @@ Start from a private test budget with the synthetic March 2027 plan and history 
 | --- | --- |
 | Open March on desktop and change food from 6 000 ₽ to 25 000 ₽. | The field shows the draft. Saved spending stays 20 000 ₽ and the food remainder stays 18 000 ₽ until Save. |
 | Select **Сохранить**, reopen March on the phone as the same owner, then refresh. | Food is 25 000 ₽, March spending is 39 000 ₽, food plan is 24 000 ₽, remainder is −1 000 ₽ and opening buffer is still −2 000 ₽. Repeating the save leaves the totals unchanged. |
-| Try `1 234,50` or interrupt a save before it reaches the server. | A Russian message identifies the problem. The form keeps the draft, the user can correct or retry, and reopening the budget elsewhere shows the last committed amount. |
+| Enter `1 234,50` and select **Сохранить**. | A Russian message asks for a whole-ruble amount. The draft remains editable and the saved total stays unchanged. |
+| Disconnect the phone before selecting **Сохранить**, then reconnect. | The open form keeps the draft and shows a connection error in Russian. After reconnection, the desktop still shows the previous total. Retry **Сохранить** on the phone and refresh the desktop to see the replacement total. |
 | Reopen after restarting the application. Open March as a different test owner. | The first owner's figures survive the restart. The second owner can access only their own budget, including when requesting a month directly. |
 
 This checks the replacement rule in **AC-04**, the monthly path through **AC-13/14**, and fractional-input rejection in **AC-15**. The walkthrough fixture starts at 6 000 ₽. Also check AC-04's independent 20 000 ₽ → 25 000 ₽ case. On a real phone, ask the participant to enter the total with the keyboard and find Save without prompting.
