@@ -37,9 +37,10 @@ mvn verify
 export BUDGET_OWNER_A_PASSWORD="$(openssl rand -hex 12)"
 export BUDGET_OWNER_B_PASSWORD="$(openssl rand -hex 12)"
 printf 'owner-a: %s\nowner-b: %s\n' "$BUDGET_OWNER_A_PASSWORD" "$BUDGET_OWNER_B_PASSWORD"
-java -jar target/finance-lab-0.1.0-SNAPSHOT.jar
+java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0-SNAPSHOT.jar
 ```
 
+The Java option allows the SQLite JDBC driver to load its native library.
 Open [March on this computer](http://127.0.0.1:8080/months/2027-03) and sign
 in with the first account and its printed password. Select **Редактировать**,
 enter the cumulative food total and select **Сохранить**. The other account
