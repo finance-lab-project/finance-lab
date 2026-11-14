@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Вход · Finance Lab</title>
+    <link rel="stylesheet" th:href="@{/budget.css}">
+</head>
+<body>
+<header class="app-bar"><span class="brand">Finance Lab</span></header>
+<main class="login">
+    <h1>Вход в бюджет</h1>
+    <p th:if="${param.error}" role="alert" class="notice error">Неверное имя пользователя или пароль.</p>
+    <form th:action="@{/login}" method="post">
+        <label for="username">Имя пользователя</label>
+        <input id="username" name="username" required autocomplete="username" autocapitalize="none" spellcheck="false">
+        <label for="password">Пароль</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password">
+        <button class="primary">Войти</button>
+    </form>
+</main>
+</body>
+</html>
