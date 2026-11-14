@@ -18,8 +18,8 @@ class MonthStore {
 
     MonthStore(JdbcClient jdbc) throws IOException {
         this.jdbc = jdbc;
-        this.readMonthSql = new ClassPathResource("sql/read-month.sql").getContentAsString(StandardCharsets.UTF_8);
-        this.replaceFoodSql = new ClassPathResource("sql/replace-food.sql").getContentAsString(StandardCharsets.UTF_8);
+        this.readMonthSql = new ClassPathResource("sql/queries/read-month.sql").getContentAsString(StandardCharsets.UTF_8);
+        this.replaceFoodSql = new ClassPathResource("sql/queries/replace-food.sql").getContentAsString(StandardCharsets.UTF_8);
     }
 
     /**
