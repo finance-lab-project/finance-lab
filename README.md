@@ -28,7 +28,7 @@ recorded in Git; the Wiki is reserved for possible future use.
 
 ## Run the March 2027 budget
 
-Use Java 21 and Maven 3.9 or newer. From the repository root, build the
+Use JDK 25 and Maven 3.9 or newer. From the repository root, build the
 application and set two distinct disposable passwords for the synthetic
 accounts `owner-a` and `owner-b`. The following example uses a POSIX shell.
 
@@ -44,6 +44,11 @@ Open [March on this computer](http://127.0.0.1:8080/months/2027-03) and sign
 in with the first account and its printed password. Select **Редактировать**,
 enter the cumulative food total and select **Сохранить**. The other account
 has its own copy of March.
+
+This increment opens March 2027. [Issue #11](https://github.com/finance-lab-project/finance-lab/issues/11)
+covers selecting a month or year and handling unsaved edits when switching.
+[Issue #12](https://github.com/finance-lab-project/finance-lab/issues/12)
+covers entering historical months and recalculating later opening balances.
 
 For the phone walkthrough, set `BUDGET_BIND` to this computer's private Wi-Fi
 IPv4 address before starting Java. On both devices, open the same address, for
