@@ -13,7 +13,7 @@ import org.springframework.util.StringUtils;
 
 /** Configures the two independent sign-ins used by the private-network budget fixture. */
 @Configuration
-class TestOwnerSecurity {
+class DemoOwnerSecurityConfiguration {
     @Bean
     UserDetailsService testOwners(@Value("${budget.owner-a-password}") String first,
                                   @Value("${budget.owner-b-password}") String second) {
