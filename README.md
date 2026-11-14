@@ -20,7 +20,7 @@ Google's Material Design is the primary reference for UI/UX decisions.
   desktop designs, phone sketches, states and links to the public Figma file.
 - [Budget v1 prototype walkthrough](docs/budget-v1-prototype-review.md) — desktop and
   phone review tasks, expected results and participant feedback status.
-- [Budget v1 implementation approach](docs/implementation-approach.md) — proposed
+- [Budget v1 implementation approach](docs/implementation-approach.md) — accepted
   technology choice, trade-offs and the first cross-device monthly save.
 
 The `docs/` directory is the main source of project documentation. Changes are
@@ -31,8 +31,8 @@ recorded in Git; the Wiki is reserved for possible future use.
 Product requirements, the user journey and acceptance criteria are agreed.
 Budget v1 desktop designs are approved; phone layouts and interaction states are
 recorded as sketches. See the screen documentation above for the agreed flows.
-The prototype walkthrough is complete. The implementation approach is proposed
-for review before application development begins.
+The prototype walkthrough and architecture review are complete. The first
+implementation increment is saving a monthly edit and reopening it on another device.
 
 ## Earlier implementation
 
