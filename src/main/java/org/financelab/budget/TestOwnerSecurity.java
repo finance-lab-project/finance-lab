@@ -9,13 +9,15 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.util.StringUtils;
 
+/** Configures the two independent sign-ins used by the private-network budget fixture. */
 @Configuration
 class TestOwnerSecurity {
     @Bean
     UserDetailsService testOwners(@Value("${budget.owner-a-password}") String first,
                                   @Value("${budget.owner-b-password}") String second) {
-        if (first.isBlank() || second.isBlank() || first.equals(second)) {
+        if (!StringUtils.hasText(first) || !StringUtils.hasText(second) || first.equals(second)) {
             throw new IllegalArgumentException("Set two distinct, nonempty test owner passwords.");
         }
         var encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();

@@ -2,6 +2,7 @@ package org.financelab.budget;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+/** Renders the signed-in owner's March budget and handles explicit saves of the food total. */
 @Controller
 class MonthController {
     static final String MARCH_PATH = "/months/2027-03";
@@ -42,7 +44,7 @@ class MonthController {
     }
 
     @PostMapping(MARCH_PATH)
-    String save(Principal owner, @RequestParam(defaultValue = "") String food, @RequestParam long revision,
+    String save(Principal owner, @RequestParam(required = false) @Nullable String food, @RequestParam long revision,
                 Model model, HttpServletResponse response, RedirectAttributes redirect) {
         long amount;
         try {
@@ -50,6 +52,7 @@ class MonthController {
         } catch (IllegalArgumentException invalidAmount) {
             response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
             model.addAttribute("fieldError", invalidAmount.getMessage());
+            // Correcting invalid input must still detect a save made since this form was opened.
             return editAfterError(model, store.read(owner.getName()), food, revision);
         }
         if (!store.replaceFood(owner.getName(), revision, amount)) {
@@ -62,7 +65,7 @@ class MonthController {
         return "redirect:" + MARCH_PATH;
     }
 
-    private String editAfterError(Model model, MonthBudget month, String draft, long revision) {
+    private String editAfterError(Model model, MonthBudget month, @Nullable String draft, long revision) {
         model.addAttribute("month", month);
         model.addAttribute("editing", true);
         model.addAttribute("draft", draft);

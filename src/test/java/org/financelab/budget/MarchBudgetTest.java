@@ -32,7 +32,7 @@ class MarchBudgetTest {
             var desktop = signedIn(app, "owner-a");
             var phone = signedIn(app, "owner-a");
             Document form = desktop.get(EDIT).html();
-            assertThat(form.selectFirst("#food").val()).isEqualTo("6 000");
+            assertThat(form.expectFirst("#food").val()).isEqualTo("6 000");
             assertMonth(phone.get(MARCH).html(), "6 000", "20 000", "18 000");
 
             assertThat(desktop.save(form, "25 000").status()).isEqualTo(302);
@@ -67,10 +67,16 @@ class MarchBudgetTest {
             var desktop = signedIn(app, "owner-a");
             var phone = signedIn(app, "owner-a");
             Document oldForm = phone.get(EDIT).html();
+            Page missing = phone.post(MARCH, Map.of("revision", revision(oldForm), "_csrf", csrf(oldForm)));
+            assertThat(missing.status()).isEqualTo(422);
+            assertThat(missing.html().expectFirst("#field-error").text()).contains("целых рублях");
+            assertThat(missing.html().expectFirst("#food").val()).isEmpty();
+            assertMonth(missing.html(), "6 000", "20 000", "18 000");
+
             Page invalid = phone.save(oldForm, "1 234,50");
             assertThat(invalid.status()).isEqualTo(422);
-            assertThat(invalid.html().selectFirst("#food").val()).isEqualTo("1 234,50");
-            assertThat(invalid.html().selectFirst("#field-error").text()).contains("целых рублях");
+            assertThat(invalid.html().expectFirst("#food").val()).isEqualTo("1 234,50");
+            assertThat(invalid.html().expectFirst("#field-error").text()).contains("целых рублях");
             assertMonth(desktop.get(MARCH).html(), "6 000", "20 000", "18 000");
 
             assertThat(desktop.save(desktop.get(EDIT).html(), "25 000").status()).isEqualTo(302);
@@ -78,8 +84,8 @@ class MarchBudgetTest {
             assertThat(revision(stillInvalid.html())).isEqualTo(revision(oldForm));
             Page conflict = phone.save(stillInvalid.html(), "28 177");
             assertThat(conflict.status()).isEqualTo(409);
-            assertThat(conflict.html().selectFirst("#save-conflict").text()).contains("25 000");
-            assertThat(conflict.html().selectFirst("#food").val()).isEqualTo("28 177");
+            assertThat(conflict.html().expectFirst("#save-conflict").text()).contains("25 000");
+            assertThat(conflict.html().expectFirst("#food").val()).isEqualTo("28 177");
             assertThat(conflict.html().select("#save-success")).isEmpty();
             assertMonth(desktop.get(MARCH).html(), "25 000", "39 000", "−1 000");
 
@@ -124,19 +130,19 @@ class MarchBudgetTest {
     }
 
     private static void assertMonth(Document html, String food, String spending, String remainder) {
-        assertThat(html.selectFirst("#row-food .actual").wholeText()).isEqualTo(food + " ₽");
-        assertThat(html.selectFirst("#spending").wholeText()).isEqualTo(spending + " ₽");
-        assertThat(html.selectFirst("#row-food .remainder").wholeText()).isEqualTo(remainder + " ₽");
-        assertThat(html.selectFirst("#row-food .plan").wholeText()).isEqualTo("24 000 ₽");
-        assertThat(html.selectFirst("#row-food .buffer").wholeText()).isEqualTo("−2 000 ₽");
+        assertThat(html.expectFirst("#row-food .actual").wholeText()).isEqualTo(food + " ₽");
+        assertThat(html.expectFirst("#spending").wholeText()).isEqualTo(spending + " ₽");
+        assertThat(html.expectFirst("#row-food .remainder").wholeText()).isEqualTo(remainder + " ₽");
+        assertThat(html.expectFirst("#row-food .plan").wholeText()).isEqualTo("24 000 ₽");
+        assertThat(html.expectFirst("#row-food .buffer").wholeText()).isEqualTo("−2 000 ₽");
     }
 
     private static String csrf(Document html) {
-        return html.selectFirst("input[name=_csrf]").val();
+        return html.expectFirst("input[name=_csrf]").val();
     }
 
     private static String revision(Document html) {
-        return html.selectFirst("input[name=revision]").val();
+        return html.expectFirst("input[name=revision]").val();
     }
 
     private record Page(int status, Document html) { }
