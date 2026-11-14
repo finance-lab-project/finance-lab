@@ -12,9 +12,11 @@ The participant stopped after desktop setup. The phone route, replacement edit a
 
 ## Why this approach
 
+The [reviewed screens](budget-v1-screen-sketches.md) guide the layout and use [Google Material Design](https://m3.material.io/) as the primary UI/UX reference. Thymeleaf fills HTML templates with the saved values and field errors supplied by Spring MVC. Shared CSS implements the typography, spacing and focus/error states from the designs.
+
 The regular task is a periodic replacement of monthly totals. One set of responsive forms can serve both screens. A small amount of browser-side JavaScript handles linked fields and the unsaved-navigation dialog. The server owns the calculations and the saved budget. Both options below support Russian text, whole-ruble amounts, monthly history and yearly reporting. [Product scope](product-scope.md) · [User journey and AC-01–AC-18](budget-v1-user-journey.md)
 
-| Decision factor | Spring MVC with embedded SQLite · recommended | Same application with PostgreSQL |
+| Decision factor | Spring MVC with embedded SQLite · selected for v1 | Same application with PostgreSQL |
 | --- | --- | --- |
 | Delivery | Package templates, rules and JDBC access in one application. A durable file beside the app is enough to exercise cross-device Save. | The same forms and rules work. Development and testing also need a database instance, credentials and a connection. |
 | Maintenance | Update one application and its driver, apply schema changes and test restoring a consistent database backup. Writes serialize, which fits occasional monthly saves. | Maintain the app plus database upgrades, access and backups, or arrange a managed service. Concurrent writers can update different budgets independently. |
@@ -22,6 +24,8 @@ The regular task is a periodic replacement of monthly totals. One set of respons
 | When to choose it | One application instance owns durable local storage and short writes are infrequent. | Prefer this option if the host offers only ephemeral app storage but already provides durable PostgreSQL, or concurrent writes routinely block saves. |
 
 **Confirmed for v1: online use only.** Each device must be able to reach the server to open a budget or save changes. Keeping one authoritative copy on the server avoids a persistent offline draft, a queue of pending saves and background synchronization. If a connection drops during editing, keep the input in the open form and let the user retry after reconnecting. Confirm success only after the server acknowledges the save.
+
+Start with SQLite for v1. Revisit PostgreSQL if the hosting or write-load conditions above change. A later migration would need to preserve monthly records and reproduce the same balances and reports.
 
 The target host and its disk are unconfirmed. The first check can use two devices on the same private network with synthetic data. Host and backup costs depend on the eventual operating arrangement. [Spring MVC and templates](https://spring.io/guides/gs/serving-web-content) · [SQLite deployment trade-offs](https://sqlite.org/whentouse.html) · [PostgreSQL architecture](https://www.postgresql.org/docs/current/tutorial-arch.html)
 
