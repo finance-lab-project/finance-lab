@@ -26,13 +26,50 @@ Google's Material Design is the primary reference for UI/UX decisions.
 The `docs/` directory is the main source of project documentation. Changes are
 recorded in Git; the Wiki is reserved for possible future use.
 
-## Current stage
+## Run the March 2027 budget
 
-Product requirements, the user journey and acceptance criteria are agreed.
-Budget v1 desktop designs are approved; phone layouts and interaction states are
-recorded as sketches. See the screen documentation above for the agreed flows.
-The prototype walkthrough and architecture review are complete. The first
-implementation increment is saving a monthly edit and reopening it on another device.
+Use Java 21 and Maven 3.9 or newer. From the repository root, build the
+application and set two distinct disposable passwords for the synthetic
+accounts `owner-a` and `owner-b`. The following example uses a POSIX shell.
+
+```sh
+mvn verify
+export BUDGET_OWNER_A_PASSWORD="$(openssl rand -hex 12)"
+export BUDGET_OWNER_B_PASSWORD="$(openssl rand -hex 12)"
+printf 'owner-a: %s\nowner-b: %s\n' "$BUDGET_OWNER_A_PASSWORD" "$BUDGET_OWNER_B_PASSWORD"
+java -jar target/finance-lab-0.1.0-SNAPSHOT.jar
+```
+
+Open [March on this computer](http://127.0.0.1:8080/months/2027-03) and sign
+in with the first account and its printed password. Select **Редактировать**,
+enter the cumulative food total and select **Сохранить**. The other account
+has its own copy of March.
+
+For the phone walkthrough, set `BUDGET_BIND` to this computer's private Wi-Fi
+IPv4 address before starting Java. On both devices, open the same address, for
+example `http://<host-private-ip>:8080/months/2027-03`. Use the same test
+account on both devices. This sign-in is for the private-network fixture.
+
+SQLite creates `march-budget.sqlite` in the working directory. Restart from
+the same directory, or set `BUDGET_DB` to the same file on persistent local
+disk. Startup fills missing fixture rows and preserves saved amounts. To try
+the initial fixture again, point `BUDGET_DB` at a new filename.
+
+### Issue #9 verification · 14 November 2026
+
+- **Real phone on private Wi-Fi.** The participant entered a total of their
+  choice with the phone's on-screen keyboard and found **Сохранить** without
+  a hint. An independent desktop browser signed in as the same owner, reopened
+  March and still showed the changed food total after refresh.
+- **Automated browser checks.** Desktop Chrome and a separate 390-pixel mobile
+  browser context exercised the 6 000 → 25 000 ₽ edit, refresh, repeated
+  Save, fractional input and a stale edit. Disconnecting the mobile context
+  before Save kept the draft editable and the desktop total unchanged.
+  Reconnecting and explicitly retrying made the replacement visible on desktop.
+- **Integration tests.** `mvn test` checks signed-in HTTP requests against a
+  real SQLite file, direct month requests by a second owner, stale revisions,
+  validation, and reopening the database after an application restart. It also
+  covers the independent 20 000 → 25 000 ₽ replacement in AC-04.
 
 ## Earlier implementation
 

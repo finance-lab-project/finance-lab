@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Март 2027 · Finance Lab</title>
+    <link rel="stylesheet" th:href="@{/budget.css}">
+    <script defer th:src="@{/month.js}"></script>
+</head>
+<body>
+<header class="app-bar">
+    <span class="brand">Finance Lab</span>
+    <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
+</header>
+<div class="layout">
+    <aside aria-label="Раздел бюджета">
+        <strong>Бюджет</strong>
+        <span class="selected" aria-current="page">Месяц</span>
+    </aside>
+    <main id="month">
+        <form id="month-form" method="post" th:action="@{/months/2027-03}">
+            <input th:if="${editing}" type="hidden" name="revision" th:value="${revision}">
+            <div class="period-bar">
+                <h1>Март 2027</h1>
+                <div class="actions">
+                    <a th:unless="${editing}" class="button primary" th:href="@{/months/2027-03(edit=true)} + '#food'">Редактировать</a>
+                    <button th:if="${editing}" class="primary" type="submit">Сохранить</button>
+                    <a th:if="${editing}" class="button secondary" th:href="@{/months/2027-03}">Отменить</a>
+                </div>
+            </div>
+            <p th:if="${saved}" class="notice" role="status" tabindex="-1" id="save-success">Изменения сохранены.</p>
+            <p th:if="${conflict}" class="notice error" role="alert" tabindex="-1" id="save-conflict">
+                Месяц уже изменён. Сохранённая сумма для продуктов —
+                <strong th:text="${@rubles.display(month.food().actual())}"></strong>.
+                Ваш черновик остался в поле. Сверьте суммы перед повторным сохранением.
+            </p>
+            <p id="request-error" class="notice error" role="alert" tabindex="-1" hidden></p>
+            <section aria-labelledby="summary-heading">
+                <h2 id="summary-heading">Сохранённые итоги</h2>
+                <dl class="summary">
+                    <div><dt>План расходов</dt><dd th:text="${@rubles.display(month.totalPlan())}"></dd></div>
+                    <div><dt>Расходы за месяц</dt><dd id="spending" th:text="${@rubles.display(month.totalSpending())}"></dd></div>
+                    <div><dt>Остаток месяца</dt><dd th:text="${@rubles.display(month.totalPlan().subtract(month.totalSpending()))}"></dd></div>
+                </dl>
+            </section>
+            <section aria-labelledby="categories-heading">
+                <h2 id="categories-heading">Расходы по категориям</h2>
+                <table aria-labelledby="categories-heading">
+                    <thead><tr>
+                        <th scope="col">Категория</th><th scope="col">План на месяц</th><th scope="col">Потрачено</th>
+                        <th scope="col">Остаток месяца</th><th scope="col">Буфер на начало месяца</th>
+                    </tr></thead>
+                    <tbody>
+                    <tr th:each="row : ${month.categories()}" th:id="|row-${row.code()}|">
+                        <th scope="row" th:text="${row.name()}"></th>
+                        <td data-label="План на месяц" class="plan" th:text="${@rubles.display(row.plan())}"></td>
+                        <td data-label="Потрачено">
+                            <div class="actual-cell">
+                                <span th:if="${editing and row.isFood()}" class="hint">Сохранено</span>
+                                <span class="actual" th:text="${@rubles.display(row.actual())}"></span>
+                                <div th:if="${editing and row.isFood()}" class="editor">
+                                    <label for="food">Продукты за месяц, ₽</label>
+                                    <input id="food" name="food" type="text" inputmode="decimal" enterkeyhint="done"
+                                           autocomplete="off" th:value="${draft}"
+                                           th:attr="aria-invalid=${fieldError != null},aria-describedby=${fieldError == null ? 'draft-hint' : 'field-error draft-hint'}">
+                                    <small th:if="${fieldError}" id="field-error" class="error" th:text="${fieldError}"></small>
+                                    <small id="draft-hint" class="hint">Черновик до сохранения</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td data-label="Остаток месяца" class="remainder" th:classappend="${row.remainder().signum() < 0} ? 'negative'"
+                            th:text="${@rubles.display(row.remainder())}"></td>
+                        <td data-label="Буфер на начало месяца" class="buffer" th:classappend="${row.buffer() < 0} ? 'negative'"
+                            th:text="${@rubles.display(row.buffer())}"></td>
+                    </tr>
+                    </tbody>
+                </table>
+            </section>
+        </form>
+    </main>
+</div>
+</body>
+</html>
