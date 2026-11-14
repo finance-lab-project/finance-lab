@@ -1,6 +1,6 @@
 # Budget v1 implementation approach
 
-**Proposed for review · 14 November 2026 · [Issue #5](https://github.com/finance-lab-project/finance-lab/issues/5)**
+**Reviewed and accepted by Anton · 14 November 2026 · [Issue #5](https://github.com/finance-lab-project/finance-lab/issues/5)**
 
 Build one Java/Spring Boot web application in this repository. It serves responsive HTML with Spring MVC and Thymeleaf and keeps the budget in a server-side SQLite database on durable local disk. Both browsers open the same application. A successful **Сохранить** commits the month once, and either device can read it on its next request.
 
