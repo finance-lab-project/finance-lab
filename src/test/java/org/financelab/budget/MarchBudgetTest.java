@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.jsoup.Jsoup;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -113,8 +115,118 @@ class MarchBudgetTest {
         }
     }
 
+    @Test
+    void settingsChangeOnlyThisOwnerFromMarchOnwardAndRejectInvalidOrStaleReplacements() throws Exception {
+        try (var app = start()) {
+            var desktop = signedIn(app, "owner-a");
+            var phone = signedIn(app, "owner-a");
+            var other = signedIn(app, "owner-b");
+            Document form = desktop.get("/settings").html();
+            Document phoneForm = phone.get("/settings").html();
+            PlanDraft draft = settingsDraft(form);
+            assertThat(draft.rows()).extracting(PlanDraft.Row::name)
+                    .containsExactly("Жильё", "Продукты", "Здоровье", "Развлечения", "Путешествия");
+            var invalid = new java.util.ArrayList<>(draft.rows());
+            invalid.set(4, invalid.get(4).withValue("poolPercent", "50"));
+            Page rejected = desktop.plan(form, new PlanDraft("100000", "incomePercent", "40", invalid));
+            assertThat(rejected.status()).isEqualTo(422);
+            assertThat(rejected.html().text()).contains("110 %", "10 %");
+            assertThat(desktop.plan(form, new PlanDraft("1 234,50", "incomePercent", "40", draft.rows())).status())
+                    .isEqualTo(422);
+            assertAllocations(phone.get(MARCH).html(), "40 000", "20 000");
+            PlanDraft raised = new PlanDraft("120000", draft.targetUnit(), draft.targetValue(), draft.rows());
+            assertThat(desktop.plan(form, raised).status()).isEqualTo(204);
+            assertThat(phone.plan(phoneForm, draft).status()).isEqualTo(409);
+            for (String past : List.of("2027-01", "2027-02")) {
+                Document month = phone.get("/months/" + past).html();
+                assertAllocations(month, "40 000", "20 000");
+                assertThat(month.expectFirst("#row-leisure .plan").wholeText()).isEqualTo("12 000 ₽");
+            }
+            for (String period : List.of("2027-03", "2027-04", "2028-01")) {
+                Document month = phone.get("/months/" + period).html();
+                assertAllocations(month, "48 000", "32 000");
+                assertThat(month.expectFirst("#row-leisure .plan").wholeText()).isEqualTo("19 200 ₽");
+                assertThat(month.expectFirst("#row-food .buffer").wholeText()).isEqualTo("−2 000 ₽");
+            }
+            assertMonth(phone.get(MARCH).html(), "6 000", "20 000", "18 000");
+            assertAllocations(other.get(MARCH).html(), "40 000", "20 000");
+        }
+    }
+
+    @Test
+    void emptyOwnerCanSetUpRenameRegroupAndReopenWithoutHistory() throws Exception {
+        String first;
+        String second;
+        try (var app = start(false)) {
+            var owner = signedIn(app, "owner-a");
+            Document empty = owner.get(MARCH).html();
+            assertThat(empty.text()).contains("План пока не задан");
+            assertThat(empty.expectFirst("#spending").wholeText()).isEqualTo("0 ₽");
+            Document form = owner.get("/settings").html();
+            assertThat(settingsDraft(form).rows()).isEmpty();
+            var a = new PlanDraft.Row("", "А", "discretionary", "poolPercent", "50");
+            var b = new PlanDraft.Row("", "Б", "discretionary", "poolPercent", "50");
+            assertThat(owner.plan(form, new PlanDraft("7", "incomePercent", "0", List.of(a, b))).status()).isEqualTo(204);
+            form = owner.get("/settings").html();
+            var entries = settingsDraft(form).rows();
+            first = entries.get(0).code();
+            second = entries.get(1).code();
+            assertThat(first).isNotBlank().isNotEqualTo(second);
+            assertThat(owner.plan(form, new PlanDraft("7", "incomePercent", "0", List.of(
+                    new PlanDraft.Row(first, "Я", "discretionary", "fraction", "1/2"), entries.get(1)))).status())
+                    .isEqualTo(204);
+        }
+        try (var app = start(false)) {
+            var owner = signedIn(app, "owner-a");
+            Document month = owner.get(MARCH).html();
+            assertThat(month.select(".category-name").eachText()).containsExactly("Я", "Б");
+            assertThat(month.select(".plan").eachText()).containsExactly("4 ₽", "3 ₽");
+            assertThat(month.select(".buffer, .actual").eachText()).containsOnly("0 ₽");
+            Document form = owner.get("/settings").html();
+            assertThat(settingsDraft(form).rows()).extracting(PlanDraft.Row::code).containsExactly(first, second);
+            var regrouped = new PlanDraft("101", "incomePercent", "50", List.of(
+                    new PlanDraft.Row(first, "Я", "essential", "annual", "366"),
+                    new PlanDraft.Row(second, "Б", "discretionary", "poolPercent", "60"),
+                    new PlanDraft.Row("", "В", "discretionary", "poolPercent", "40")));
+            var other = signedIn(app, "owner-b");
+            assertThat(other.plan(other.get("/settings").html(), regrouped).status()).isEqualTo(422);
+            assertThat(owner.plan(form, regrouped).status()).isEqualTo(204);
+            month = owner.get(MARCH).html();
+            assertThat(month.select(".plan").eachText()).containsExactly("31 ₽", "11 ₽", "8 ₽");
+            assertAllocations(month, "51", "19");
+            assertThat(owner.save(owner.get(EDIT).html(), "9").status()).isEqualTo(302);
+            assertThat(owner.get(MARCH).html().select(".actual").eachText()).containsExactly("9 ₽", "0 ₽", "0 ₽");
+            assertThat(owner.get("/months/2027-02").html().select("tbody tr")).isEmpty();
+            assertThat(other.get(MARCH).html().select("tbody tr")).isEmpty();
+        }
+        try (var demo = start()) {
+            var existingOwner = signedIn(demo, "owner-a");
+            assertThat(existingOwner.get("/months/2027-02").html().select("tbody tr")).isEmpty();
+            assertThat(existingOwner.get(MARCH).html().select(".actual").eachText()).containsExactly("9 ₽", "0 ₽", "0 ₽");
+            assertMonth(signedIn(demo, "owner-b").get(MARCH).html(), "6 000", "20 000", "18 000");
+        }
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private static PlanDraft settingsDraft(Document page) {
+        String initial = page.expectFirst("#plan-form").attr("data-initial");
+        return JSON.readValue(initial, PlanCalculator.Preview.class).draft();
+    }
+
+    private static void assertAllocations(Document month, String investments, String discretionary) {
+        assertThat(month.expectFirst("#plan-investments").wholeText()).isEqualTo(investments + " ₽");
+        assertThat(month.expectFirst("#plan-pool").wholeText()).isEqualTo(discretionary + " ₽");
+    }
+
     private ConfigurableApplicationContext start() {
-        return new SpringApplicationBuilder(FinanceLabApplication.class).run(
+        return start(true);
+    }
+
+    private ConfigurableApplicationContext start(boolean demo) {
+        var builder = new SpringApplicationBuilder(FinanceLabApplication.class);
+        if (demo) builder.profiles("demo");
+        return builder.run("--budget.current-month=2027-03",
                 "--server.port=0", "--server.address=127.0.0.1",
                 "--spring.datasource.url=jdbc:sqlite:" + directory.resolve("budget.sqlite"),
                 "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
@@ -162,6 +274,15 @@ class MarchBudgetTest {
 
         Page save(Document form, String draft) throws IOException, InterruptedException {
             return post(MARCH, Map.of("food", draft, "revision", revision(form), "_csrf", csrf(form)));
+        }
+
+        Page plan(Document page, PlanDraft draft) throws IOException, InterruptedException {
+            var form = page.expectFirst("#plan-form");
+            var save = new SettingsController.Save(form.attr("data-period"), Long.parseLong(form.attr("data-revision")), draft);
+            return request(HttpRequest.newBuilder(base.resolve("/settings"))
+                    .header(form.attr("data-csrf-header"), csrf(page))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(save))).build());
         }
 
         Page post(String path, Map<String, String> fields) throws IOException, InterruptedException {

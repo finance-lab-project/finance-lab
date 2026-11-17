@@ -26,7 +26,7 @@ Google's Material Design is the primary reference for UI/UX decisions.
 The `docs/` directory is the main source of project documentation. Changes are
 recorded in Git; the Wiki is reserved for possible future use.
 
-## Run the March 2027 budget
+## Run the budget
 
 Use JDK 25 and Maven 3.9 or newer. From the repository root, build the
 application and set two distinct disposable passwords for the synthetic
@@ -41,25 +41,35 @@ java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0-SNAPSHOT.j
 ```
 
 The Java option allows the SQLite JDBC driver to load its native library.
-Open [March on this computer](http://127.0.0.1:8080/months/2027-03) and sign
-in with the first account and its printed password. Select **Редактировать**,
-enter the cumulative food total and select **Сохранить**. The other account
-has its own copy of March.
+Open [the budget on this computer](http://127.0.0.1:8080/) and sign in. A new
+database opens the current calendar month with an empty budget for each owner.
+In **Настройки**, enter the prepared planning income and investment target,
+then add essential and discretionary categories. Enter a monthly essential
+plan directly or supply a previous-year expense total to calculate an average.
+The linked ruble and percentage fields use total planning income. **Доля
+свободного бюджета** sets the split of the remainder, including when it is zero.
+**Сохранить** opens the saved month. Later income or category changes take
+effect from the current month. The initial monthly editor can update the actual
+for the first category you added.
 
-This increment opens March 2027. [Issue #11](https://github.com/finance-lab-project/finance-lab/issues/11)
-covers selecting a month or year and handling unsaved edits when switching.
-[Issue #12](https://github.com/finance-lab-project/finance-lab/issues/12)
-covers entering historical months and recalculating later opening balances.
+The optional `demo` Spring profile opens March 2027 with the worked example for
+both test accounts. To run that walkthrough, start the same jar with
+`--spring.profiles.active=demo`. Use a separate `BUDGET_DB` file when trying the
+fixture alongside an empty budget. In March, select **Редактировать** to
+replace the cumulative food total from issue #9. A database from that
+increment keeps its recorded plans and actuals.
 
 For the phone walkthrough, set `BUDGET_BIND` to this computer's private Wi-Fi
-IPv4 address before starting Java. On both devices, open the same address, for
-example `http://<host-private-ip>:8080/months/2027-03`. Use the same test
-account on both devices. This sign-in is for the private-network fixture.
+IPv4 address before starting Java. Open the same address on both devices,
+for example `http://<host-private-ip>:8080/`, and use the same test account.
+This sign-in is for the private-network fixture. SQLite uses
+`march-budget.sqlite` in the working directory by default. Restart from the
+same directory or set `BUDGET_DB` to a file on persistent local disk.
 
-SQLite creates `march-budget.sqlite` in the working directory. Restart from
-the same directory, or set `BUDGET_DB` to the same file on persistent local
-disk. Startup fills missing fixture rows and preserves saved amounts. To try
-the initial fixture again, point `BUDGET_DB` at a new filename.
+[Issue #11](https://github.com/finance-lab-project/finance-lab/issues/11)
+covers the period picker and editing all monthly actuals.
+[Issue #12](https://github.com/finance-lab-project/finance-lab/issues/12)
+covers historical entry and recalculation from newly entered expenses.
 
 ### Issue #9 verification · 14 November 2026
 

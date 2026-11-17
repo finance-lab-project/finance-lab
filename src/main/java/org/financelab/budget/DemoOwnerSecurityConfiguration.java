@@ -32,7 +32,7 @@ class DemoOwnerSecurityConfiguration {
                         .requestMatchers("/budget.css", "/month.js", "/error").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(login -> login.loginPage("/login")
-                        .defaultSuccessUrl(MonthController.MARCH_PATH, true).permitAll())
+                        .defaultSuccessUrl("/", true).permitAll())
                 .logout(logout -> logout.logoutSuccessUrl("/login"))
                 .build();
     }

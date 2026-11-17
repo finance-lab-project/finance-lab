@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Настройки плана · Finance Lab</title>
+    <link rel="stylesheet" th:href="@{/budget.css}">
+    <script defer th:src="@{/settings.js}"></script>
+</head>
+<body>
+<header class="app-bar">
+    <span class="brand">Finance Lab</span>
+    <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
+</header>
+<div class="layout">
+    <aside aria-label="Раздел бюджета">
+        <strong>Бюджет</strong>
+        <a class="nav-link" th:href="@{/months/{p}(p=${period})}">Месяц</a>
+        <span class="selected" aria-current="page">Настройки</span>
+    </aside>
+    <main id="settings">
+        <form id="plan-form" th:action="@{/settings}" method="post"
+              th:attr="data-preview=@{/settings/preview},data-month=@{/months/{p}(p=${period})},data-period=${period},
+                       data-revision=${revision},data-initial=${previewJson},data-csrf-header=${_csrf.headerName}">
+            <div class="period-bar">
+                <h1>Настройки плана</h1>
+                <div class="actions">
+                    <button class="primary" type="submit" disabled>Сохранить</button>
+                    <a class="button secondary" th:href="@{/months/{p}(p=${period})}">Отменить</a>
+                </div>
+            </div>
+            <p class="hint" th:text="|${title} и следующие месяцы|"></p>
+            <noscript><p class="notice">Для связанных полей плана включите JavaScript в браузере.</p></noscript>
+            <p id="plan-error" class="notice error" role="alert" hidden></p>
+            <section aria-labelledby="income-heading">
+                <h2 id="income-heading">Доход для плана</h2>
+                <label class="setting-field">Подготовленный доход за месяц, ₽
+                    <input id="income" type="text" inputmode="decimal" required autocomplete="off">
+                </label>
+            </section>
+            <section aria-labelledby="investment-heading">
+                <h2 id="investment-heading">Инвестиции</h2>
+                <div class="field-grid">
+                    <label>Цель, % от дохода<input id="target-percent" type="text" inputmode="decimal" autocomplete="off"></label>
+                    <label>Цель, ₽<input id="target-amount" type="text" inputmode="decimal" autocomplete="off"></label>
+                </div>
+            </section>
+            <section aria-labelledby="categories-heading">
+                <h2 id="categories-heading">Категории расходов</h2>
+                <p class="hint">Для необходимых расходов укажите подготовленный месячный план или сумму за прошлый год.
+                    Свободные расходы распределяются по долям остатка после инвестиций.</p>
+                <div id="plan-rows"></div>
+                <button id="add-category" class="button secondary" type="button">Добавить категорию</button>
+            </section>
+            <section aria-labelledby="preview-heading">
+                <h2 id="preview-heading">Предварительный расчёт</h2>
+                <dl class="summary">
+                    <div><dt>Необходимые расходы</dt><dd id="preview-needs"></dd></div>
+                    <div><dt>Плановые инвестиции</dt><dd id="preview-investments"></dd></div>
+                    <div><dt>Свободный бюджет</dt><dd id="preview-pool"></dd></div>
+                </dl>
+                <p class="notice error" id="preview-shortfall" hidden></p>
+            </section>
+        </form>
+        <template id="category-template">
+            <fieldset class="plan-row">
+                <legend>Категория</legend>
+                <div class="field-grid">
+                    <label>Название<input data-field="name" type="text" required autocomplete="off"></label>
+                    <label>Группа<select data-field="group">
+                        <option value="essential">Необходимые расходы</option>
+                        <option value="discretionary">Свободные расходы</option>
+                    </select></label>
+                    <label>План на месяц, ₽<input data-field="amount" type="text" inputmode="decimal"></label>
+                    <label>От всего дохода, %<input data-field="incomePercent" type="text" inputmode="decimal"></label>
+                    <label data-group="essential">Расходы за прошлый год, ₽
+                        <input data-field="annual" type="text" inputmode="decimal" placeholder="Необязательно">
+                    </label>
+                    <label data-group="discretionary">Доля свободного бюджета, %
+                        <input data-field="poolPercent" type="text" inputmode="decimal">
+                    </label>
+                </div>
+                <button class="text-button remove-row" type="button">Убрать из черновика</button>
+            </fieldset>
+        </template>
+    </main>
+</div>
+</body>
+</html>

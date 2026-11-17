@@ -43,7 +43,7 @@ public class Rubles {
      * @param value amount in whole rubles
      * @return grouped digits with a typographic minus for negative amounts
      */
-    public String number(Number value) {
+    public static String number(Number value) {
         Objects.requireNonNull(value, "value");
         return NumberFormat.getIntegerInstance(RUSSIAN).format(value).replace('-', '−');
     }
