@@ -78,3 +78,22 @@ input[aria-invalid="true"] { border-color: var(--error); }
     td::before { content: attr(data-label); color: var(--muted); text-align: left; }
     .login { margin: 2rem 1rem; }
 }
+
+.nav-link { display: block; padding: .55rem 1.1rem; color: var(--accent); }
+#settings { width: 100%; max-width: 76rem; margin-inline: auto; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; }
+.category-group { display: block; font-weight: normal; }
+.subheading { margin-top: 1.2rem; }
+.setting-field, .field-grid label { display: grid; gap: .35rem; }
+.setting-field { max-width: 20rem; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .9rem; }
+.plan-row { min-width: 0; margin: .85rem 0; padding: .8rem 1rem 1rem; border: 1px solid var(--line); border-radius: 1rem; background: white; }
+.plan-row legend { padding: 0 .35rem; font-weight: 500; overflow-wrap: anywhere; }
+.plan-row select { width: 100%; min-height: 44px; font: inherit; color: inherit; background: white; border: 1px solid #79747e; border-radius: .35rem; }
+.plan-row .remove-row { margin-top: .5rem; }
+#add-category { margin-top: .5rem; }
+[hidden] { display: none !important; }
+@media (max-width: 46rem) {
+    #settings { padding: .6rem 1rem 2rem; }
+    .field-grid { grid-template-columns: 1fr; }
+    aside { flex-wrap: wrap; }
+}

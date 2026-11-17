@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Март 2027 · Finance Lab</title>
+    <title th:text="|${title} · Finance Lab|">Месяц · Finance Lab</title>
     <link rel="stylesheet" th:href="@{/budget.css}">
     <script defer th:src="@{/month.js}"></script>
 </head>
@@ -16,25 +16,44 @@
     <aside aria-label="Раздел бюджета">
         <strong>Бюджет</strong>
         <span class="selected" aria-current="page">Месяц</span>
+        <a class="nav-link" th:href="@{/settings}">Настройки</a>
     </aside>
     <main id="month">
-        <form id="month-form" method="post" th:action="@{/months/2027-03}">
+        <form id="month-form" method="post" th:action="@{/months/{p}(p=${period})}">
             <input th:if="${editing}" type="hidden" name="revision" th:value="${revision}">
             <div class="period-bar">
-                <h1>Март 2027</h1>
+                <h1 th:text="${title}">Месяц</h1>
                 <div class="actions">
-                    <a th:unless="${editing}" class="button primary" th:href="@{/months/2027-03(edit=true)} + '#food'">Редактировать</a>
+                    <a th:if="${editable and !editing}" class="button primary" th:href="@{/months/{p}(p=${period},edit=true)} + '#food'">Редактировать</a>
                     <button th:if="${editing}" class="primary" type="submit">Сохранить</button>
-                    <a th:if="${editing}" class="button secondary" th:href="@{/months/2027-03}">Отменить</a>
+                    <a th:if="${editing}" class="button secondary" th:href="@{/months/{p}(p=${period})}">Отменить</a>
                 </div>
             </div>
             <p th:if="${saved}" class="notice" role="status" tabindex="-1" id="save-success">Изменения сохранены.</p>
             <p th:if="${conflict}" class="notice error" role="alert" tabindex="-1" id="save-conflict">
-                Месяц уже изменён. Сохранённая сумма для продуктов —
-                <strong th:text="${@rubles.display(month.food().actual())}"></strong>.
+                Месяц уже изменён. Сохранённая сумма по категории «<span th:text="${editCategory.name()}"></span>» —
+                <strong th:text="${@rubles.display(editCategory.actual())}"></strong>.
                 Ваш черновик остался в поле. Сверьте суммы перед повторным сохранением.
             </p>
             <p id="request-error" class="notice error" role="alert" tabindex="-1" hidden></p>
+            <p th:if="${allocation == null and month.categories().isEmpty()}" class="notice">
+                План пока не задан. В разделе «Настройки» укажите доход и добавьте категории.
+            </p>
+            <section th:if="${allocation != null}" aria-labelledby="plan-heading">
+                <h2 id="plan-heading">Сохранённый план</h2>
+                <dl class="summary">
+                    <div><dt>Доход для плана</dt><dd id="plan-income" th:text="${@rubles.display(allocation.income())}"></dd></div>
+                    <div><dt>Необходимые расходы</dt><dd id="plan-needs" th:text="${@rubles.display(allocation.needs())}"></dd></div>
+                    <div><dt>Свободные расходы</dt><dd id="plan-pool" th:text="${@rubles.display(allocation.pool())}"></dd></div>
+                </dl>
+                <h2 class="subheading">Инвестиции</h2>
+                <dl class="summary">
+                    <div><dt>Цель</dt><dd id="plan-target" th:text="${@rubles.display(allocation.target())}"></dd></div>
+                    <div><dt>По плану</dt><dd id="plan-investments" th:text="${@rubles.display(allocation.investments())}"></dd></div>
+                </dl>
+                <p th:if="${allocation.shortfall().signum() > 0}" class="notice error" id="plan-shortfall"
+                   th:text="|На необходимые расходы не хватает ${@rubles.display(allocation.shortfall())}.|"></p>
+            </section>
             <section aria-labelledby="summary-heading">
                 <h2 id="summary-heading">Сохранённые итоги</h2>
                 <dl class="summary">
@@ -43,23 +62,30 @@
                     <div><dt>Остаток месяца</dt><dd th:text="${@rubles.display(month.totalPlan().subtract(month.totalSpending()))}"></dd></div>
                 </dl>
             </section>
-            <section aria-labelledby="categories-heading">
+            <section th:unless="${month.categories().isEmpty()}" aria-labelledby="categories-heading">
                 <h2 id="categories-heading">Расходы по категориям</h2>
                 <table aria-labelledby="categories-heading">
                     <thead><tr>
-                        <th scope="col">Категория</th><th scope="col">План на месяц</th><th scope="col">Потрачено</th>
+                        <th scope="col">Категория</th><th scope="col">План на месяц</th>
+                        <th th:if="${allocation != null}" scope="col">Доля дохода</th><th scope="col">Потрачено</th>
                         <th scope="col">Остаток месяца</th><th scope="col">Буфер на начало месяца</th>
                     </tr></thead>
                     <tbody>
                     <tr th:each="row : ${month.categories()}" th:id="|row-${row.code()}|">
-                        <th scope="row" th:text="${row.name()}"></th>
+                        <th scope="row">
+                            <span class="category-name" th:text="${row.name()}"></span>
+                            <small th:if="${allocation != null}" class="category-group hint"
+                                   th:text="${row.group() == 'essential' ? 'Необходимые расходы' : 'Свободные расходы'}"></small>
+                        </th>
                         <td data-label="План на месяц" class="plan" th:text="${@rubles.display(row.plan())}"></td>
+                        <td th:if="${allocation != null}" data-label="Доля дохода" class="income-share"
+                            th:text="${allocation.income() == 0 ? '—' : month.percent(row.plan()) + ' %'}"></td>
                         <td data-label="Потрачено">
                             <div class="actual-cell">
-                                <span th:if="${editing and row.isFood()}" class="hint">Сохранено</span>
+                                <span th:if="${editing and row.code() == editCategory.code()}" class="hint">Сохранено</span>
                                 <span class="actual" th:text="${@rubles.display(row.actual())}"></span>
-                                <div th:if="${editing and row.isFood()}" class="editor">
-                                    <label for="food">Продукты за месяц, ₽</label>
+                                <div th:if="${editing and row.code() == editCategory.code()}" class="editor">
+                                    <label for="food" th:text="|${row.name()} за месяц, ₽|"></label>
                                     <input id="food" name="food" type="text" inputmode="decimal" enterkeyhint="done"
                                            autocomplete="off" th:value="${draft}"
                                            th:attr="aria-invalid=${fieldError != null},aria-describedby=${fieldError == null ? 'draft-hint' : 'field-error draft-hint'}">

@@ -1,6 +1,11 @@
 {
   "properties": [
     {
+      "name": "budget.current-month",
+      "type": "java.lang.String",
+      "description": "Override the calendar month for a reproducible walkthrough (yyyy-MM)."
+    },
+    {
       "name": "budget.owner-a-password",
       "type": "java.lang.String",
       "description": "Password for the synthetic owner-a account."
