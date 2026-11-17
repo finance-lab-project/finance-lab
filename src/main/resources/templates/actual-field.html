@@ -1,0 +1,7 @@
+<label xmlns:th="http://www.thymeleaf.org" th:fragment="field(key, label, disabled)" class="actual-field">
+    <span th:text="${label}"></span>
+    <input type="text" inputmode="decimal" autocomplete="off" th:id="${key}" th:name="${key}"
+           th:value="${draft.get(key)}" th:disabled="${disabled}"
+           th:attr="data-saved=${original.get(key)},aria-invalid=${errors.containsKey(key)},aria-describedby=${errors.containsKey(key) ? 'error-' + key : null}">
+    <small th:if="${errors.containsKey(key)}" th:id="|error-${key}|" class="error" th:text="${errors.get(key)}"></small>
+</label>

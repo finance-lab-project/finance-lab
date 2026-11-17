@@ -3,10 +3,11 @@ package org.financelab.budget;
 import jakarta.servlet.http.HttpServletResponse;
 import java.security.Principal;
 import java.time.YearMonth;
-import org.financelab.budget.MonthBudget.Category;
-import org.jspecify.annotations.Nullable;
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,64 +37,80 @@ class MonthController {
         return "login";
     }
 
+    @GetMapping("/months")
+    String select(@RequestParam int year, @RequestParam int month) {
+        if (year < 1 || year > 9999 || month < 1 || month > 12) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Укажите месяц и год.");
+        }
+        return "redirect:/months/" + YearMonth.of(year, month);
+    }
+
     @GetMapping("/months/{month}")
     String month(Principal owner, @PathVariable @DateTimeFormat(pattern = "uuuu-MM") YearMonth month,
                  @RequestParam(defaultValue = "false") boolean edit, Model model) {
-        MonthBudget budget = store.read(owner.getName(), month);
-        var category = budget.editableCategory();
-        boolean editable = canEdit(month, category);
-        model.addAttribute("editing", edit && editable);
-        if (editable) {
-            model.addAttribute("draft", Rubles.number(category.actual()));
-            model.addAttribute("revision", category.revision());
+        return view(model, month, store.read(owner.getName(), month), edit);
+    }
+
+    @PostMapping("/months/linked-value")
+    ResponseEntity<String> linkedValue(@RequestParam String unit, @RequestParam String value,
+                                       @RequestParam long planningIncome) {
+        try {
+            String linked = switch (unit) {
+                case "amount" -> PlanCalculator.displayedPercent(Rubles.parse(value), planningIncome);
+                case "percent" -> Rubles.number(MonthActuals.fromPercent(value, planningIncome));
+                default -> throw new IllegalArgumentException("Выберите рубли или проценты.");
+            };
+            return ResponseEntity.ok(linked);
+        } catch (IllegalArgumentException invalid) {
+            return ResponseEntity.unprocessableContent().body(invalid.getMessage());
         }
-        return view(model, month, budget);
     }
 
     @PostMapping("/months/{month}")
-    String save(Principal owner, @PathVariable @DateTimeFormat(pattern = "uuuu-MM") YearMonth month,
-                @RequestParam(name = "food", required = false) @Nullable String draft, @RequestParam long revision,
+    String save(Principal principal, @PathVariable @DateTimeFormat(pattern = "uuuu-MM") YearMonth month,
+                @RequestParam long revision, @RequestParam long planRevision, @RequestParam Map<String, String> fields,
                 Model model, HttpServletResponse response, RedirectAttributes redirect) {
-        MonthBudget current = store.read(owner.getName(), month);
-        var category = current.editableCategory();
-        if (!canEdit(month, category)) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        long amount;
-        try {
-            amount = Rubles.parse(draft);
-        } catch (IllegalArgumentException invalidAmount) {
-            response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
-            model.addAttribute("fieldError", invalidAmount.getMessage());
-            model.addAttribute("revision", revision);
-            model.addAttribute("draft", draft);
-            model.addAttribute("editing", true);
-            return view(model, month, current);
+        String owner = principal.getName();
+        MonthBudget current = store.read(owner, month);
+        var draft = new HashMap<>(fields);
+        var errors = new HashMap<String, String>();
+        if (planRevision == current.planRevision()) {
+            MonthActuals actuals = MonthActuals.parse(current, draft, errors);
+            if (!errors.isEmpty()) {
+                response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
+                model.addAttribute("revision", revision);
+                model.addAttribute("draft", draft);
+                model.addAttribute("errors", errors);
+                return view(model, month, current, true);
+            }
+            if (revision == current.figures().revision() && store.replace(owner, month, current, revision, actuals)) {
+                redirect.addFlashAttribute("saved", true);
+                return "redirect:/months/" + month;
+            }
+            current = store.read(owner, month);
         }
-        if (!store.replaceActual(owner.getName(), month, category, revision, amount)) {
-            current = store.read(owner.getName(), month);
-            response.setStatus(HttpStatus.CONFLICT.value());
-            model.addAttribute("conflict", true);
-            model.addAttribute("revision", current.editableCategory().revision());
-            model.addAttribute("draft", draft);
-            model.addAttribute("editing", true);
-            return view(model, month, current);
-        }
-        redirect.addFlashAttribute("saved", true);
-        return "redirect:/months/" + month;
+
+        // Keep the submitted inputs for review and include any categories added on the other device.
+        MonthActuals.savedFields(current).forEach(draft::putIfAbsent);
+        MonthActuals.parse(current, draft, errors);
+        response.setStatus(HttpStatus.CONFLICT.value());
+        model.addAttribute("conflict", true);
+        model.addAttribute("draft", draft);
+        model.addAttribute("errors", errors);
+        return view(model, month, current, true);
     }
 
-    private boolean canEdit(YearMonth month, @Nullable Category category) {
-        // Keep the original March food URL usable when reopening an issue #9 database.
-        return category != null && (month.equals(period.current())
-                || (month.equals(YearMonth.of(2027, 3)) && category.code().equals("food")));
-    }
-
-    private String view(Model model, YearMonth month, MonthBudget budget) {
+    private String view(Model model, YearMonth month, MonthBudget budget, boolean editing) {
+        model.addAttribute("editing", editing);
+        if (editing) {
+            var original = MonthActuals.savedFields(budget);
+            model.addAttribute("original", original);
+            model.mergeAttributes(Map.of("draft", original, "errors", Map.of(), "revision", budget.figures().revision()));
+        }
         model.addAttribute("month", budget);
-        model.addAttribute("period", month.toString());
+        model.addAttribute("period", month);
+        model.addAttribute("months", BudgetPeriod.MONTHS);
         model.addAttribute("title", BudgetPeriod.title(month));
-        var category = budget.editableCategory();
-        model.addAttribute("editCategory", category);
-        model.addAttribute("editable", canEdit(month, category));
         if (budget.terms() != null) model.addAttribute("allocation", budget.allocation());
         return "month";
     }

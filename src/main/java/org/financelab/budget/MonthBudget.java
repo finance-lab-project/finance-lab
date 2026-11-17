@@ -10,12 +10,16 @@ import org.jspecify.annotations.Nullable;
  * A snapshot of the committed figures for one owner's month. Draft form values
  * do not participate in its totals.
  * @param terms planning settings effective in this month, if configured
+ * @param figures saved income, investment contributions and version of the month's actuals
  * @param categories saved categories in display order
  */
-public record MonthBudget(@Nullable Terms terms, List<Category> categories) {
+public record MonthBudget(@Nullable Terms terms, Figures figures, List<Category> categories) {
+    public record Figures(long income, long contributions, long revision) {}
+
     /**
      * Takes a snapshot so later edits to the source list cannot change the totals.
      * @param terms effective planning settings, if configured
+     * @param figures saved monthly figures
      * @param categories saved category rows
      * @throws NullPointerException if the list or any row is null
      */
@@ -23,10 +27,12 @@ public record MonthBudget(@Nullable Terms terms, List<Category> categories) {
         categories = List.copyOf(categories);
     }
 
-    /** The one-category actuals editor uses fixture food or the first category the owner added. */
-    public @Nullable Category editableCategory() {
-        return categories.stream().filter(row -> row.code().equals("food")).findFirst()
-                .orElse(categories.isEmpty() ? null : categories.getFirst());
+    public long planningIncome() {
+        return terms == null ? 0 : terms.income();
+    }
+
+    public long planRevision() {
+        return terms == null ? 0 : terms.revision();
     }
 
     public PlanCalculator.Totals allocation() {
@@ -36,7 +42,7 @@ public record MonthBudget(@Nullable Terms terms, List<Category> categories) {
     }
 
     public String percent(long amount) {
-        return PlanCalculator.displayedPercent(amount, terms.income());
+        return PlanCalculator.displayedPercent(amount, planningIncome());
     }
 
     /** {@return the sum of the monthly plans, in whole rubles} */
@@ -59,9 +65,8 @@ public record MonthBudget(@Nullable Terms terms, List<Category> categories) {
      * @param plan monthly allocation in whole rubles
      * @param actual saved cumulative spending in whole rubles
      * @param buffer balance carried from earlier months, in whole rubles
-     * @param revision version of the saved category amount used to detect stale edits
      */
-    public record Category(String code, String name, String group, long plan, long actual, long buffer, long revision) {
+    public record Category(String code, String name, String group, long plan, long actual, long buffer) {
         /**
          * Creates a saved category row.
          * @param code stable category identifier
@@ -70,7 +75,6 @@ public record MonthBudget(@Nullable Terms terms, List<Category> categories) {
          * @param plan monthly allocation in rubles
          * @param actual saved cumulative spending in rubles
          * @param buffer opening balance in rubles
-         * @param revision version of the saved amount
          * @throws NullPointerException if the code or name is null
          */
         public Category {

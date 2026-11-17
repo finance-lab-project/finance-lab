@@ -19,21 +19,36 @@
         <a class="nav-link" th:href="@{/settings}">Настройки</a>
     </aside>
     <main id="month">
-        <form id="month-form" method="post" th:action="@{/months/{p}(p=${period})}">
-            <input th:if="${editing}" type="hidden" name="revision" th:value="${revision}">
-            <div class="period-bar">
+        <div class="period-bar">
+            <div>
                 <h1 th:text="${title}">Месяц</h1>
-                <div class="actions">
-                    <a th:if="${editable and !editing}" class="button primary" th:href="@{/months/{p}(p=${period},edit=true)} + '#food'">Редактировать</a>
-                    <button th:if="${editing}" class="primary" type="submit">Сохранить</button>
-                    <a th:if="${editing}" class="button secondary" th:href="@{/months/{p}(p=${period})}">Отменить</a>
-                </div>
+                <form id="period-picker" class="period-picker" th:action="@{/months}" method="get">
+                    <label>Месяц
+                        <select name="month">
+                            <option th:each="name, i : ${months}" th:value="${i.count}" th:text="${name}"
+                                    th:selected="${i.count == period.monthValue}"></option>
+                        </select>
+                    </label>
+                    <label>Год <input name="year" type="number" min="1" max="9999" required th:value="${period.year}"></label>
+                    <button type="submit" class="text-button">Перейти</button>
+                </form>
             </div>
+            <div class="actions">
+                <a th:unless="${editing}" class="button primary" th:href="@{/months/{p}(p=${period},edit=true)}">Редактировать</a>
+                <button th:if="${editing}" form="month-form" class="primary" type="submit">Сохранить</button>
+                <a th:if="${editing}" class="button secondary" th:href="@{/months/{p}(p=${period})}">Отменить</a>
+            </div>
+        </div>
+        <form id="month-form" method="post" th:action="@{/months/{p}(p=${period})}"
+              th:attr="data-link-url=@{/months/linked-value},data-planning-income=${month.planningIncome()}">
+            <input th:if="${editing}" type="hidden" name="revision" th:value="${revision}">
+            <input th:if="${editing}" type="hidden" name="planRevision" th:value="${month.planRevision()}">
             <p th:if="${saved}" class="notice" role="status" tabindex="-1" id="save-success">Изменения сохранены.</p>
             <p th:if="${conflict}" class="notice error" role="alert" tabindex="-1" id="save-conflict">
-                Месяц уже изменён. Сохранённая сумма по категории «<span th:text="${editCategory.name()}"></span>» —
-                <strong th:text="${@rubles.display(editCategory.actual())}"></strong>.
-                Ваш черновик остался в поле. Сверьте суммы перед повторным сохранением.
+                Месяц уже изменён. Сверьте черновик с сохранёнными суммами перед повторным сохранением.
+            </p>
+            <p th:if="${editing}" id="unsaved" class="notice" role="status" th:hidden="${errors.isEmpty() and conflict == null}">
+                Есть несохранённые изменения. Итоги и остатки показаны по последнему сохранению.
             </p>
             <p id="request-error" class="notice error" role="alert" tabindex="-1" hidden></p>
             <p th:if="${allocation == null and month.categories().isEmpty()}" class="notice">
@@ -56,6 +71,14 @@
             </section>
             <section aria-labelledby="summary-heading">
                 <h2 id="summary-heading">Сохранённые итоги</h2>
+                <dl class="summary monthly-figures">
+                    <div><dt>Фактический доход</dt><dd id="actual-income" th:text="${@rubles.display(month.figures().income())}"></dd>
+                        <dd th:if="${editing}" class="monthly-editor"><label th:replace="~{actual-field :: field('income', 'Доход за месяц, ₽', false)}"></label></dd>
+                    </div>
+                    <div><dt>Инвестиционные взносы</dt><dd id="actual-contributions" th:text="${@rubles.display(month.figures().contributions())}"></dd>
+                        <dd th:if="${editing}" class="monthly-editor"><label th:replace="~{actual-field :: field('contributions', 'Взносы за месяц, ₽', false)}"></label></dd>
+                    </div>
+                </dl>
                 <dl class="summary">
                     <div><dt>План расходов</dt><dd th:text="${@rubles.display(month.totalPlan())}"></dd></div>
                     <div><dt>Расходы за месяц</dt><dd id="spending" th:text="${@rubles.display(month.totalSpending())}"></dd></div>
@@ -64,6 +87,7 @@
             </section>
             <section th:unless="${month.categories().isEmpty()}" aria-labelledby="categories-heading">
                 <h2 id="categories-heading">Расходы по категориям</h2>
+                <p th:if="${editing and month.planningIncome() == 0}" class="hint">При нулевом доходе для плана вводите расходы в рублях.</p>
                 <table aria-labelledby="categories-heading">
                     <thead><tr>
                         <th scope="col">Категория</th><th scope="col">План на месяц</th>
@@ -82,15 +106,13 @@
                             th:text="${allocation.income() == 0 ? '—' : month.percent(row.plan()) + ' %'}"></td>
                         <td data-label="Потрачено">
                             <div class="actual-cell">
-                                <span th:if="${editing and row.code() == editCategory.code()}" class="hint">Сохранено</span>
+                                <span th:if="${editing}" class="hint">Сохранено</span>
                                 <span class="actual" th:text="${@rubles.display(row.actual())}"></span>
-                                <div th:if="${editing and row.code() == editCategory.code()}" class="editor">
-                                    <label for="food" th:text="|${row.name()} за месяц, ₽|"></label>
-                                    <input id="food" name="food" type="text" inputmode="decimal" enterkeyhint="done"
-                                           autocomplete="off" th:value="${draft}"
-                                           th:attr="aria-invalid=${fieldError != null},aria-describedby=${fieldError == null ? 'draft-hint' : 'field-error draft-hint'}">
-                                    <small th:if="${fieldError}" id="field-error" class="error" th:text="${fieldError}"></small>
-                                    <small id="draft-hint" class="hint">Черновик до сохранения</small>
+                                <div th:if="${editing}" class="editor">
+                                    <input type="hidden" class="source-unit" th:name="|unit-${row.code()}|"
+                                           th:value="${draft.get('unit-' + row.code()) == 'percent' ? 'percent' : 'amount'}">
+                                    <label th:replace="~{actual-field :: field(${'amount-' + row.code()}, ${row.name() + ' за месяц, ₽'}, false)}"></label>
+                                    <label th:replace="~{actual-field :: field(${'percent-' + row.code()}, ${row.name() + ', % от дохода для плана'}, ${month.planningIncome() == 0})}"></label>
                                 </div>
                             </div>
                         </td>
@@ -103,6 +125,19 @@
                 </table>
             </section>
         </form>
+        <dialog th:if="${editing}" id="unsaved-dialog" aria-labelledby="unsaved-heading">
+            <form method="dialog">
+                <div class="dialog-heading">
+                    <h2 id="unsaved-heading">Сохранить изменения перед переходом?</h2>
+                    <button class="text-button" value="stay" aria-label="Закрыть">×</button>
+                </div>
+                <div class="dialog-actions">
+                    <button class="primary" value="save">Сохранить и перейти</button>
+                    <button class="secondary" value="discard">Перейти без сохранения</button>
+                    <button class="text-button" value="stay" autofocus>Остаться</button>
+                </div>
+            </form>
+        </dialog>
     </main>
 </div>
 </body>
