@@ -6,6 +6,7 @@ WITH RECURSIVE
         SELECT name FROM accounts a
          WHERE NOT EXISTS (SELECT 1 FROM planning_settings p WHERE p.owner = a.name)
            AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = a.name)
+           AND NOT EXISTS (SELECT 1 FROM month_actuals m WHERE m.owner = a.name)
     ),
     fixture(period, category, plan, actual) AS (
         SELECT printf('2026-%02d', n), 'food',
@@ -24,3 +25,13 @@ INSERT INTO category_month (owner, period, category, plan, actual)
 SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual
 FROM fixture CROSS JOIN owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
+
+-- Include existing walkthrough databases. The reserved food key identifies the demo months.
+WITH figures(period, income, contributions) AS (VALUES
+    ('2027-01', 98000, 35000), ('2027-02', 102000, 45000), ('2027-03', 50000, 10000)
+)
+INSERT INTO month_actuals (owner, period, income, contributions, revision)
+SELECT m.owner, m.period, f.income, f.contributions, 0
+  FROM category_month m JOIN figures f ON f.period = m.period
+ WHERE m.category = 'food'
+ON CONFLICT (owner, period) DO NOTHING;

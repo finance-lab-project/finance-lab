@@ -23,6 +23,15 @@ CREATE TABLE IF NOT EXISTS category_month (
     PRIMARY KEY (owner, period, category)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS month_actuals (
+    owner TEXT NOT NULL,
+    period TEXT NOT NULL,
+    income INTEGER NOT NULL,
+    contributions INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    PRIMARY KEY (owner, period)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS planning_settings (
     owner TEXT NOT NULL,
     since TEXT NOT NULL,

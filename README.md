@@ -48,16 +48,21 @@ then add essential and discretionary categories. Enter a monthly essential
 plan directly or supply a previous-year expense total to calculate an average.
 The linked ruble and percentage fields use total planning income. **Доля
 свободного бюджета** sets the split of the remainder, including when it is zero.
-**Сохранить** opens the saved month. Later income or category changes take
-effect from the current month. The initial monthly editor can update the actual
-for the first category you added.
+**Сохранить** opens the saved month. Later planning income or category changes
+take effect from the current month.
+
+Choose a month and year and select **Перейти**, then **Редактировать**. Replace
+the cumulative spending for each category in rubles or as a percentage of
+planning income. Enter actual income and investment contributions separately.
+**Сохранить** commits the whole month. **Отменить** restores the saved figures.
+When switching periods with edits, choose whether to save, discard or stay.
 
 The optional `demo` Spring profile opens March 2027 with the worked example for
 both test accounts. To run that walkthrough, start the same jar with
 `--spring.profiles.active=demo`. Use a separate `BUDGET_DB` file when trying the
-fixture alongside an empty budget. In March, select **Редактировать** to
-replace the cumulative food total from issue #9. A database from that
-increment keeps its recorded plans and actuals.
+fixture alongside an empty budget. In March, the initial figures include
+50 000 ₽ actual income, 10 000 ₽ in contributions and 6 000 ₽ spent on food.
+A database from issue #9 keeps its recorded plans and category actuals.
 
 For the phone walkthrough, set `BUDGET_BIND` to this computer's private Wi-Fi
 IPv4 address before starting Java. Open the same address on both devices,
@@ -66,8 +71,6 @@ This sign-in is for the private-network fixture. SQLite uses
 `march-budget.sqlite` in the working directory by default. Restart from the
 same directory or set `BUDGET_DB` to a file on persistent local disk.
 
-[Issue #11](https://github.com/finance-lab-project/finance-lab/issues/11)
-covers the period picker and editing all monthly actuals.
 [Issue #12](https://github.com/finance-lab-project/finance-lab/issues/12)
 covers historical entry and recalculation from newly entered expenses.
 

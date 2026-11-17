@@ -1,11 +1,11 @@
 WITH rows AS (
     SELECT p.category, p.name, p.kind, p.addition_order, coalesce(m.plan, p.plan) AS plan,
-           coalesce(m.actual, 0) AS actual, coalesce(m.revision, 0) AS revision
+           coalesce(m.actual, 0) AS actual
       FROM planning_category p
  LEFT JOIN category_month m ON m.owner = p.owner AND m.period = :period AND m.category = p.category
      WHERE p.owner = :owner AND p.since = :since
     UNION ALL
-    SELECT m.category, c.name, 'essential', c.display_order, m.plan, m.actual, m.revision
+    SELECT m.category, c.name, 'essential', c.display_order, m.plan, m.actual
       FROM category_month m JOIN category c ON c.code = m.category
      WHERE m.owner = :owner AND m.period = :period AND :since = ''
 )

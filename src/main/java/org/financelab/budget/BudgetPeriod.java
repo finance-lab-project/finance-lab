@@ -1,7 +1,11 @@
 package org.financelab.budget;
 
+import java.time.Month;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.time.format.TextStyle;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -10,6 +14,8 @@ import org.springframework.stereotype.Component;
 class BudgetPeriod {
     private static final Locale RUSSIAN = Locale.forLanguageTag("ru");
     private static final DateTimeFormatter TITLE = DateTimeFormatter.ofPattern("LLLL uuuu", RUSSIAN);
+    static final List<String> MONTHS = Arrays.stream(Month.values())
+            .map(month -> month.getDisplayName(TextStyle.FULL_STANDALONE, RUSSIAN)).toList();
     private final YearMonth fixed;
 
     BudgetPeriod(@Value("${budget.current-month:}") String fixed) {

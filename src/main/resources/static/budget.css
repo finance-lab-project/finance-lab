@@ -30,6 +30,11 @@ aside strong, .selected { display: block; padding: .55rem 1.1rem; }
 #month { width: 100%; max-width: 82rem; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; margin-inline: auto; }
 .period-bar, .actions { display: flex; align-items: center; gap: .65rem; }
 .period-bar { justify-content: space-between; padding: .45rem 0 .9rem; }
+.period-picker { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .4rem; }
+.period-picker label, .actual-field { display: grid; gap: .2rem; }
+.period-picker select { min-height: 44px; font: inherit; border: 1px solid #79747e; border-radius: .35rem; background: white; color: inherit; }
+.period-picker input { width: 5.5rem; }
+.period-picker button { padding-inline: .75rem; }
 section { margin-top: 1.6rem; }
 .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
 .summary div, table, .login { border: 1px solid var(--line); border-radius: 1rem; background: white; }
@@ -46,6 +51,15 @@ tbody tr + tr > * { border-top: 1px solid var(--line); }
 .negative, .error { color: var(--error); }
 .actual-cell { display: grid; justify-items: end; }
 .editor { display: grid; gap: .35rem; margin-top: .6rem; width: 11.3rem; text-align: left; }
+.monthly-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: .8rem; }
+.monthly-editor { margin-top: .6rem; text-align: left; }
+.actual-field { font-weight: normal; }
+.actual-field input.modified { border-left: .25rem solid var(--accent); background: #faf7ff; }
+dialog { width: min(30rem, calc(100% - 2rem)); padding: 1.4rem; border: 1px solid var(--line); border-radius: 1rem; color: inherit; }
+dialog::backdrop { background: rgb(29 27 32 / 42%); }
+.dialog-heading { display: flex; gap: .5rem; justify-content: space-between; align-items: start; }
+.dialog-heading .text-button { padding: .35rem .8rem; font-size: 1.3rem; }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 label, .hint { font-size: .875rem; }
 input { width: 100%; min-height: 44px; padding: .6rem .75rem; border: 1px solid #79747e; border-radius: .35rem; background: white; color: inherit; scroll-margin: 6rem; }
 input[aria-invalid="true"] { border-color: var(--error); }
@@ -66,6 +80,8 @@ input[aria-invalid="true"] { border-color: var(--error); }
     .actions > * { padding-inline: .8rem; }
     .summary { grid-template-columns: 1fr; gap: 0; border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; }
     .summary div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; border: 0; border-radius: 0; padding: .65rem 1rem; }
+    .monthly-figures div { display: grid; grid-template-columns: 1fr auto; gap: .4rem; }
+    .monthly-editor { grid-column: 1 / -1; }
     dd { margin: 0; text-align: right; }
     table, tbody, tbody th { display: block; }
     table { border: 0; background: transparent; overflow: visible; }
@@ -76,6 +92,8 @@ input[aria-invalid="true"] { border-color: var(--error); }
     tbody th, td { padding: 0; }
     td { display: flex; justify-content: space-between; gap: .6rem; overflow-wrap: anywhere; }
     td::before { content: attr(data-label); color: var(--muted); text-align: left; }
+    .actual-cell { min-width: 0; }
+    .editor { max-width: 100%; }
     .login { margin: 2rem 1rem; }
 }
 
