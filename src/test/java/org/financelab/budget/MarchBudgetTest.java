@@ -152,6 +152,65 @@ class MarchBudgetTest {
     }
 
     @Test
+    void reportShowsCommittedYearResultsAndExcludesMarchFromAveragesAndBuffer() throws Exception {
+        try (var app = start()) {
+            assertThat(new Browser(app).get("/years/2027").status()).isEqualTo(302);
+            var owner = signedIn(app, "owner-a");
+            var other = signedIn(app, "owner-b");
+            String path = owner.get(MARCH).html().expectFirst("[data-year-report]").attr("href");
+            assertThat(path).isEqualTo("/years/2027");
+            Page page = owner.get(path);
+            assertThat(page.status()).isEqualTo(200);
+            Document report = page.html();
+            assertThat(report.expectFirst("#average-period").text()).isEqualTo("Январь — февраль 2027");
+            assertThat(report.expectFirst("#buffer-cutoff").text()).contains("1 марта 2027 года");
+            assertThat(report.select("#year-income, #year-spending, #year-contributions").eachText())
+                    .containsExactly("250 000 ₽", "131 000 ₽", "90 000 ₽");
+            assertThat(report.select("#average-income, #average-spending, #average-contributions").eachText())
+                    .containsExactly("100 000 ₽", "55 500 ₽", "40 000 ₽");
+            assertThat(report.expectFirst("#year-buffer").text()).isEqualTo("−5 000 ₽");
+            assertThat(report.select("#row-food td").eachText())
+                    .containsExactly("288 000 ₽", "54 000 ₽", "24 000 ₽", "−2 000 ₽");
+            assertThat(report.select("#year-months tbody tr")).hasSize(12);
+            var march = report.expectFirst("#year-months tr:has(a[href='" + MARCH + "'])");
+            assertThat(march.select("td").eachText()).containsExactly("50 000 ₽", "20 000 ₽", "10 000 ₽");
+            assertThat(report.select("#year-months tbody tr:last-child td").eachText()).containsOnly("0 ₽");
+
+            assertThat(owner.save(owner.get(EDIT).html(), "25 000").status()).isEqualTo(302);
+            report = owner.get(path).html();
+            assertThat(report.expectFirst("#year-spending").text()).isEqualTo("150 000 ₽");
+            assertThat(report.expectFirst("#average-spending").text()).isEqualTo("55 500 ₽");
+            assertThat(report.expectFirst("#year-buffer").text()).isEqualTo("−5 000 ₽");
+            assertThat(report.select("#row-food td").eachText())
+                    .containsExactly("288 000 ₽", "73 000 ₽", "24 000 ₽", "−2 000 ₽");
+            assertThat(other.get(path).html().expectFirst("#year-spending").text()).isEqualTo("131 000 ₽");
+        }
+    }
+
+    @Test
+    void pastYearCountsMissingMonthsAndJanuaryHasNoAverage() throws Exception {
+        try (var app = start(true, "2028-01")) {
+            var owner = signedIn(app, "owner-a");
+            assertThat(owner.get("/years?year=2027").status()).isEqualTo(302);
+            assertThat(owner.get("/years/0").status()).isEqualTo(400);
+            Document previous = owner.get("/years/2027").html();
+            assertThat(previous.expectFirst("#average-period").text()).isEqualTo("Январь — декабрь 2027");
+            assertThat(previous.expectFirst("#year-spending").text()).isEqualTo("131 000 ₽");
+            assertThat(previous.select("#average-income, #average-spending, #average-contributions").eachText())
+                    .containsExactly("20 833 ₽", "10 917 ₽", "7 500 ₽");
+            assertThat(previous.expectFirst("#buffer-cutoff").text()).contains("1 января 2028 года");
+            assertThat(previous.expectFirst("#year-buffer").text()).isEqualTo("35 000 ₽");
+            assertThat(previous.expectFirst("#row-food .buffer").text()).isEqualTo("16 000 ₽");
+
+            Document january = owner.get("/years/2028").html();
+            assertThat(january.expectFirst("#average-period").text()).isEqualTo("Нет завершённых месяцев");
+            assertThat(january.select("#average-income, #average-spending, #average-contributions")).isEmpty();
+            assertThat(january.expectFirst("#row-food .average").text()).isEqualTo("—");
+            assertThat(january.expectFirst("#year-buffer").text()).isEqualTo("35 000 ₽");
+        }
+    }
+
+    @Test
     void editingSelectedPeriodsChangesOnlyTheirActualsAndLaterOpeningBuffers() throws Exception {
         try (var app = start()) {
             var owner = signedIn(app, "owner-a");
@@ -288,6 +347,12 @@ class MarchBudgetTest {
             }
             assertMonth(phone.get(MARCH).html(), "6 000", "20 000", "18 000");
             assertAllocations(other.get(MARCH).html(), "40 000", "20 000");
+            Document report = phone.get("/years/2027").html();
+            assertThat(report.expectFirst("#year-planned-spending").text()).isEqualTo("840 000 ₽");
+            assertThat(report.expectFirst("#year-planned-investments").text()).isEqualTo("560 000 ₽");
+            Document otherReport = other.get("/years/2027").html();
+            assertThat(otherReport.expectFirst("#year-planned-spending").text()).isEqualTo("720 000 ₽");
+            assertThat(otherReport.expectFirst("#year-planned-investments").text()).isEqualTo("480 000 ₽");
         }
     }
 
@@ -381,6 +446,9 @@ class MarchBudgetTest {
             }
             assertFood(owner.get("/months/2027-01").html(), "24 000", "−14 000");
             assertFood(owner.get("/months/2027-02").html(), "24 000", "−15 000");
+            Document updatedReport = owner.get("/years/2027").html();
+            assertThat(updatedReport.select("#row-food td").eachText())
+                    .containsExactly("298 000 ₽", "54 000 ₽", "24 000 ₽", "−14 000 ₽");
             assertFood(signedIn(app, "owner-b").get(MARCH).html(), "24 000", "−2 000");
         }
         try (var app = start()) {
@@ -470,9 +538,13 @@ class MarchBudgetTest {
     }
 
     private ConfigurableApplicationContext start(boolean demo) {
+        return start(demo, "2027-03");
+    }
+
+    private ConfigurableApplicationContext start(boolean demo, String currentMonth) {
         var builder = new SpringApplicationBuilder(FinanceLabApplication.class);
         if (demo) builder.profiles("demo");
-        return builder.run("--budget.current-month=2027-03",
+        return builder.run("--budget.current-month=" + currentMonth,
                 "--server.port=0", "--server.address=127.0.0.1",
                 "--spring.datasource.url=jdbc:sqlite:" + directory.resolve("budget.sqlite"),
                 "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",

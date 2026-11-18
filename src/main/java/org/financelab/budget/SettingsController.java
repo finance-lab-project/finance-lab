@@ -39,6 +39,7 @@ class SettingsController {
         model.addAttribute("previewJson", json.writeValueAsString(PlanCalculator.evaluate(saved.draft())));
         model.addAttribute("revision", saved.revision());
         model.addAttribute("period", month.toString());
+        model.addAttribute("reportYear", month.getYear());
         model.addAttribute("title", BudgetPeriod.title(month));
         return "settings";
     }

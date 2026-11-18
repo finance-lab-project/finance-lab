@@ -1,8 +1,12 @@
 package org.financelab.budget;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -37,19 +41,70 @@ class MonthStore {
 
     @Transactional(readOnly = true)
     public MonthBudget read(String owner, YearMonth month) {
+        return read(owner, month, period.current(), true);
+    }
+
+    private MonthBudget read(String owner, YearMonth month, YearMonth current, boolean withBuffer) {
         var terms = plans.terms(owner, month);
-        YearMonth current = period.current();
         var catalogue = month.isBefore(current) ? plans.terms(owner, current) : terms;
         var categories = jdbc.sql(readMonthSql)
                 .param("owner", owner).param("period", month.toString())
                 .param("since", terms == null ? "" : terms.since())
                 .param("catalogueSince", catalogue == null ? "" : catalogue.since())
+                .param("withBuffer", withBuffer)
                 .param("cutoff", (month.isBefore(current) ? month : current).toString())
                 .query((rs, index) -> new MonthBudget.Category(rs.getString("category"), rs.getString("name"),
                         rs.getString("kind"), rs.getLong("plan"), rs.getLong("actual"),
                         rs.getLong("opening_buffer")))
                 .list();
         return new MonthBudget(terms, figures(owner, month), categories);
+    }
+
+    @Transactional(readOnly = true)
+    public YearReport readYear(String owner, int year, YearMonth current) {
+        YearMonth january = YearMonth.of(year, 1);
+        YearMonth nextJanuary = january.plusYears(1);
+        YearMonth cutoff = current.isBefore(nextJanuary) ? current : nextJanuary;
+        int completedMonths = (int) Math.max(0, january.until(cutoff, ChronoUnit.MONTHS));
+
+        var months = new ArrayList<YearReport.Month>(12);
+        var categories = new LinkedHashMap<String, YearReport.Category>();
+        var totals = YearReport.Actuals.ZERO;
+        var completedTotals = YearReport.Actuals.ZERO;
+        BigInteger spendingPlan = BigInteger.ZERO;
+        BigInteger investmentPlan = BigInteger.ZERO;
+        for (int index = 0; index < 12; index++) {
+            YearMonth month = january.plusMonths(index);
+            MonthBudget budget = read(owner, month, current, false);
+            YearReport.Actuals actuals = YearReport.Actuals.from(budget);
+            months.add(new YearReport.Month(month, actuals));
+            totals = totals.plus(actuals);
+            boolean completed = index < completedMonths;
+            if (completed) completedTotals = completedTotals.plus(actuals);
+            spendingPlan = spendingPlan.add(budget.totalPlan());
+            if (budget.terms() != null) {
+                investmentPlan = investmentPlan.add(BigInteger.valueOf(budget.allocation().investments()));
+            }
+            for (var row : budget.categories()) {
+                var category = categories.computeIfAbsent(row.code(), code -> YearReport.Category.empty(code, row.name()));
+                categories.put(row.code(), category.withMonth(row, completed));
+            }
+        }
+
+        // Carry only recorded plans forward, including records from earlier years.
+        jdbc.sql("""
+                SELECT m.category, c.name, m.plan, m.actual
+                  FROM category_month m JOIN category c ON c.code = m.category
+                 WHERE m.owner = ? AND m.period < ?
+                """).params(owner, cutoff.toString()).query(rs -> {
+            String code = rs.getString("category");
+            String name = rs.getString("name");
+            var category = categories.computeIfAbsent(code, key -> YearReport.Category.empty(key, name));
+            var balance = BigInteger.valueOf(rs.getLong("plan")).subtract(BigInteger.valueOf(rs.getLong("actual")));
+            categories.put(code, category.withBalance(balance));
+        });
+        return new YearReport(year, cutoff, completedMonths, List.copyOf(months), totals, completedTotals,
+                spendingPlan, investmentPlan, List.copyOf(categories.values()));
     }
 
     @Transactional(readOnly = true)

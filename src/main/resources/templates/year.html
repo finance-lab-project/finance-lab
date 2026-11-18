@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="|Итоги за ${report.year()} год · Finance Lab|">Итоги · Finance Lab</title>
+    <link rel="stylesheet" th:href="@{/budget.css}">
+</head>
+<body>
+<header class="app-bar">
+    <span class="brand">Finance Lab</span>
+    <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
+</header>
+<div class="layout">
+    <aside aria-label="Раздел бюджета">
+        <strong>Бюджет</strong>
+        <a class="nav-link" th:href="@{/months/{p}(p=${monthLink})}">Месяц</a>
+        <span class="selected" aria-current="page">Итоги</span>
+        <a class="nav-link" th:href="@{/settings}">Настройки</a>
+        <a class="nav-link" th:href="@{/history}">Ввод истории</a>
+    </aside>
+    <main id="year-report">
+        <div class="period-bar">
+            <div>
+                <h1 th:text="|Итоги за ${report.year()} год|">Итоги года</h1>
+                <form class="period-picker" th:action="@{/years}" method="get">
+                    <label>Год <input name="year" type="number" min="1" max="9999" required th:value="${report.year()}"></label>
+                    <button type="submit" class="text-button">Перейти</button>
+                </form>
+            </div>
+        </div>
+        <section aria-labelledby="actuals-heading" th:with="totals=${report.totals()}">
+            <h2 id="actuals-heading" th:text="|Факт за ${report.year()} год|">Факт за год</h2>
+            <dl class="summary">
+                <div><dt>Доход</dt><dd id="year-income" th:text="${@rubles.display(totals.income())}"></dd></div>
+                <div><dt>Расходы</dt><dd id="year-spending" th:text="${@rubles.display(totals.spending())}"></dd></div>
+                <div><dt>Инвестиционные взносы</dt><dd id="year-contributions" th:text="${@rubles.display(totals.contributions())}"></dd></div>
+            </dl>
+        </section>
+        <section aria-labelledby="averages-heading" aria-describedby="average-period">
+            <h2 id="averages-heading">Среднее за завершённые месяцы</h2>
+            <p id="average-period" class="hint report-period"
+               th:text="${averagePeriod ?: 'Нет завершённых месяцев'}"></p>
+            <dl th:if="${report.completedMonths() > 0}" class="summary" th:with="totals=${report.completedTotals()}">
+                <div><dt>Доход</dt><dd id="average-income" th:text="${@rubles.display(report.roundedAverage(totals.income()))}"></dd></div>
+                <div><dt>Расходы</dt><dd id="average-spending" th:text="${@rubles.display(report.roundedAverage(totals.spending()))}"></dd></div>
+                <div><dt>Инвестиционные взносы</dt><dd id="average-contributions"
+                    th:text="${@rubles.display(report.roundedAverage(totals.contributions()))}"></dd></div>
+            </dl>
+        </section>
+        <section aria-labelledby="plan-heading">
+            <h2 id="plan-heading" th:text="|План на весь ${report.year()} год|">План на весь год</h2>
+            <dl class="summary report-plan">
+                <div><dt>Расходы</dt><dd id="year-planned-spending" th:text="${@rubles.display(report.spendingPlan())}"></dd></div>
+                <div><dt>Инвестиции</dt><dd id="year-planned-investments" th:text="${@rubles.display(report.investmentPlan())}"></dd></div>
+            </dl>
+        </section>
+        <section aria-labelledby="months-heading">
+            <h2 id="months-heading">Факт по месяцам</h2>
+            <table id="year-months" aria-labelledby="months-heading">
+                <thead><tr>
+                    <th scope="col">Месяц</th><th scope="col">Доход</th>
+                    <th scope="col">Расходы</th><th scope="col">Инвестиционные взносы</th>
+                </tr></thead>
+                <tbody>
+                    <tr th:each="row, i : ${report.months()}">
+                        <th scope="row"><a class="report-month" th:href="@{/months/{p}(p=${row.period()})}"
+                            th:text="${months[i.index]}"></a></th>
+                        <td data-label="Доход" th:text="${@rubles.display(row.actuals().income())}"></td>
+                        <td data-label="Расходы" th:text="${@rubles.display(row.actuals().spending())}"></td>
+                        <td data-label="Инвестиционные взносы" th:text="${@rubles.display(row.actuals().contributions())}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+        <section aria-labelledby="categories-heading">
+            <h2 id="categories-heading">Расходы по категориям</h2>
+            <p th:if="${report.categories().isEmpty()}" class="hint">Нет категорий расходов.</p>
+            <th:block th:unless="${report.categories().isEmpty()}">
+                <p id="buffer-cutoff" class="hint report-period">
+                    <span th:text="|Общий буфер на ${bufferDate} года с учётом предыдущих лет|"></span>
+                    <strong id="year-buffer" th:classappend="${report.totalBuffer().signum() < 0} ? 'negative'"
+                            th:text="${@rubles.display(report.totalBuffer())}"></strong>
+                </p>
+                <table id="year-categories" aria-labelledby="categories-heading" aria-describedby="buffer-cutoff average-period">
+                    <thead><tr>
+                        <th scope="col">Категория</th><th scope="col">План на год</th><th scope="col">Факт за год</th>
+                        <th scope="col">Среднее за завершённые месяцы</th><th scope="col">Буфер</th>
+                    </tr></thead>
+                    <tbody>
+                        <tr th:each="row : ${report.categories()}" th:id="|row-${row.code()}|">
+                            <th scope="row" th:text="${row.name()}"></th>
+                            <td data-label="План на год" class="plan" th:text="${@rubles.display(row.plan())}"></td>
+                            <td data-label="Факт за год" class="actual" th:text="${@rubles.display(row.actual())}"></td>
+                            <td data-label="Среднее" class="average"
+                                th:text="${report.completedMonths() == 0 ? '—' : @rubles.display(report.roundedAverage(row.completedActual()))}"></td>
+                            <td data-label="Буфер" class="buffer" th:classappend="${row.buffer().signum() < 0} ? 'negative'"
+                                th:text="${@rubles.display(row.buffer())}"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </th:block>
+        </section>
+    </main>
+</div>
+</body>
+</html>

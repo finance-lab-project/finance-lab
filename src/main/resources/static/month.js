@@ -16,7 +16,11 @@ function initMonthForm() {
     const main = document.querySelector("#month, #history");
     const form = main.querySelector("#month-form, #history-form");
     const notice = main.querySelector("#unsaved");
-    if (!notice) return;
+    const yearLink = document.querySelector("[data-year-report]");
+    if (!notice) {
+        yearLink.onclick = null;
+        return;
+    }
     const picker = main.querySelector("#period-picker");
     const dialog = main.querySelector("#unsaved-dialog");
     const error = main.querySelector("#request-error");
@@ -141,14 +145,29 @@ function initMonthForm() {
         const sameMonth = picker.elements.month.selectedOptions[0].defaultSelected;
         if (sameYear && sameMonth) {
             event.preventDefault();
-        } else if (markChanges()) {
-            event.preventDefault();
-            destination = new URL(picker.action);
-            destination.search = new URLSearchParams(new FormData(picker)).toString();
-            dialog.returnValue = "stay";
-            dialog.showModal();
+        } else {
+            const target = new URL(picker.action);
+            target.search = new URLSearchParams(new FormData(picker)).toString();
+            confirmNavigation(event, target);
         }
     });
+
+    yearLink.onclick = event => {
+        if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        confirmNavigation(event, yearLink.href);
+    };
+
+    function confirmNavigation(event, target) {
+        if (main.inert) {
+            event.preventDefault();
+            return;
+        }
+        if (!markChanges()) return;
+        event.preventDefault();
+        destination = target;
+        dialog.returnValue = "stay";
+        dialog.showModal();
+    }
 
     dialog.addEventListener("click", event => {
         if (event.target === dialog) dialog.close("stay");
