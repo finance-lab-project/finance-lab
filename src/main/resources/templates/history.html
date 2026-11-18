@@ -16,6 +16,7 @@
     <aside aria-label="Раздел бюджета">
         <strong>Бюджет</strong>
         <a class="nav-link" th:href="@{/}">Месяц</a>
+        <a class="nav-link" data-year-report th:href="@{/years/{y}(y=${period.year})}">Итоги</a>
         <a class="nav-link" th:href="@{/settings}">Настройки</a>
         <span class="selected" aria-current="page">Ввод истории</span>
     </aside>

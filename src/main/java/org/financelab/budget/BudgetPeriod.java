@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 class BudgetPeriod {
     private static final Locale RUSSIAN = Locale.forLanguageTag("ru");
     private static final DateTimeFormatter TITLE = DateTimeFormatter.ofPattern("LLLL uuuu", RUSSIAN);
+    private static final DateTimeFormatter START_DATE = DateTimeFormatter.ofPattern("d MMMM uuuu", RUSSIAN);
     static final List<String> MONTHS = Arrays.stream(Month.values())
             .map(month -> month.getDisplayName(TextStyle.FULL_STANDALONE, RUSSIAN)).toList();
     private final YearMonth fixed;
@@ -24,6 +25,10 @@ class BudgetPeriod {
 
     YearMonth current() {
         return fixed == null ? YearMonth.now() : fixed;
+    }
+
+    static String startDate(YearMonth month) {
+        return month.atDay(1).format(START_DATE);
     }
 
     static String title(YearMonth month) {

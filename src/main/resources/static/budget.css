@@ -27,7 +27,7 @@ button:disabled { opacity: .65; cursor: wait; }
 aside { padding: 2rem 1rem; background: #f0edf5; }
 aside strong, .selected { display: block; padding: .55rem 1.1rem; }
 .selected { margin-top: .35rem; background: #eaddff; color: #391e72; border-radius: 2rem; }
-#month, #history { width: 100%; max-width: 82rem; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; margin-inline: auto; }
+#month, #history, #year-report { width: 100%; max-width: 82rem; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; margin-inline: auto; }
 .period-bar, .actions { display: flex; align-items: center; gap: .65rem; }
 .period-bar { justify-content: space-between; padding: .45rem 0 .9rem; }
 .period-picker { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .4rem; }
@@ -37,6 +37,10 @@ aside strong, .selected { display: block; padding: .55rem 1.1rem; }
 .period-picker button { padding-inline: .75rem; }
 section { margin-top: 1.6rem; }
 .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
+.report-plan { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.report-period { margin-bottom: .75rem; }
+.report-month { color: var(--accent); text-transform: capitalize; }
+#year-categories th[scope=row] { overflow-wrap: anywhere; }
 .summary div, table, .login { border: 1px solid var(--line); border-radius: 1rem; background: white; }
 .summary div { padding: 1rem 1.2rem; }
 dt, .hint { color: var(--muted); }
@@ -74,7 +78,7 @@ input[aria-invalid="true"] { border-color: var(--error); }
     .selected { margin: 0; }
 }
 @media (max-width: 46rem) {
-    #month, #history { padding: .6rem 1rem 2rem; }
+    #month, #history, #year-report { padding: .6rem 1rem 2rem; }
     .period-bar { position: sticky; top: 0; z-index: 1; flex-wrap: wrap; background: #faf9fc; border-bottom: 1px solid var(--line); }
     .actions { gap: .25rem; }
     .actions > * { padding-inline: .8rem; }
@@ -92,6 +96,7 @@ input[aria-invalid="true"] { border-color: var(--error); }
     tbody th, td { padding: 0; }
     td { display: flex; justify-content: space-between; gap: .6rem; overflow-wrap: anywhere; }
     td::before { content: attr(data-label); color: var(--muted); text-align: left; }
+    .report-month { display: inline-flex; align-items: center; min-height: 44px; }
     .actual-cell { min-width: 0; }
     .editor { max-width: 100%; }
     .login { margin: 2rem 1rem; }
