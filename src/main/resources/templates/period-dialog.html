@@ -1,0 +1,13 @@
+<dialog xmlns:th="http://www.thymeleaf.org" th:fragment="unsaved" id="unsaved-dialog" aria-labelledby="unsaved-heading">
+    <form method="dialog">
+        <div class="dialog-heading">
+            <h2 id="unsaved-heading">Сохранить изменения перед переходом?</h2>
+            <button class="text-button" value="stay" aria-label="Закрыть">×</button>
+        </div>
+        <div class="dialog-actions">
+            <button class="primary" value="save">Сохранить и перейти</button>
+            <button class="secondary" value="discard">Перейти без сохранения</button>
+            <button class="text-button" value="stay" autofocus>Остаться</button>
+        </div>
+    </form>
+</dialog>

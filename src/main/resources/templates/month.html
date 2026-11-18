@@ -17,6 +17,7 @@
         <strong>Бюджет</strong>
         <span class="selected" aria-current="page">Месяц</span>
         <a class="nav-link" th:href="@{/settings}">Настройки</a>
+        <a class="nav-link" th:href="@{/history/{p}(p=${historyPeriod})}">Ввод истории</a>
     </aside>
     <main id="month">
         <div class="period-bar">
@@ -125,19 +126,7 @@
                 </table>
             </section>
         </form>
-        <dialog th:if="${editing}" id="unsaved-dialog" aria-labelledby="unsaved-heading">
-            <form method="dialog">
-                <div class="dialog-heading">
-                    <h2 id="unsaved-heading">Сохранить изменения перед переходом?</h2>
-                    <button class="text-button" value="stay" aria-label="Закрыть">×</button>
-                </div>
-                <div class="dialog-actions">
-                    <button class="primary" value="save">Сохранить и перейти</button>
-                    <button class="secondary" value="discard">Перейти без сохранения</button>
-                    <button class="text-button" value="stay" autofocus>Остаться</button>
-                </div>
-            </form>
-        </dialog>
+        <th:block th:if="${editing}"><dialog th:replace="~{period-dialog :: unsaved}"></dialog></th:block>
     </main>
 </div>
 </body>

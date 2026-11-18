@@ -1,9 +1,12 @@
 package org.financelab.budget;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.YearMonth;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -43,6 +46,35 @@ class PlanStore {
                 .query((r, i) -> new PlanDraft.Row(r.getString(1), r.getString(2), r.getString(3),
                         r.getString(4), r.getString(5))).list();
         return new Settings(terms.revision(), new PlanDraft(Long.toString(terms.income()), "fraction", terms.target().stored(), rows));
+    }
+
+    // Called within the month write transaction so the new plans and historical figures commit together.
+    void recalculateFromHistory(String owner, YearMonth current) {
+        Settings settings = read(owner, current);
+        PlanDraft saved = settings.draft();
+        if (saved.rows().isEmpty()) return;
+
+        YearMonth january = current.withMonth(1);
+        Map<String, BigInteger> totals = new HashMap<>();
+        jdbc.sql("""
+                SELECT category, actual FROM category_month
+                 WHERE owner = ? AND period >= ? AND period < ?
+                """).params(owner, january.minusYears(1).toString(), january.toString())
+                .query(rs -> {
+                    totals.merge(rs.getString("category"), BigInteger.valueOf(rs.getLong("actual")), BigInteger::add);
+                });
+        List<PlanDraft.Row> rows = saved.rows().stream().map(row -> {
+            BigInteger total = totals.get(row.code());
+            if (!"essential".equals(row.group()) || total == null) return row;
+            BigInteger monthly = new Fraction(total, BigInteger.valueOf(12)).rounded().max(BigInteger.ZERO);
+            return row.withValue("amount", monthly.toString());
+        }).toList();
+        if (rows.equals(saved.rows())) return;
+
+        var plan = PlanCalculator.evaluate(new PlanDraft(saved.income(), saved.targetUnit(), saved.targetValue(), rows));
+        if (!save(owner, current, settings.revision(), plan)) {
+            throw new IllegalStateException("Planning settings changed during the historical save.");
+        }
     }
 
     @Transactional

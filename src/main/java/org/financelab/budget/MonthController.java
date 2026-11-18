@@ -109,6 +109,8 @@ class MonthController {
         }
         model.addAttribute("month", budget);
         model.addAttribute("period", month);
+        YearMonth current = period.current();
+        model.addAttribute("historyPeriod", month.isBefore(current) ? month : current.minusMonths(1));
         model.addAttribute("months", BudgetPeriod.MONTHS);
         model.addAttribute("title", BudgetPeriod.title(month));
         if (budget.terms() != null) model.addAttribute("allocation", budget.allocation());

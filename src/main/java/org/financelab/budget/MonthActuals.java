@@ -44,7 +44,7 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
         return new MonthActuals(income, contributions, spending);
     }
 
-    private static long amount(String key, Map<String, String> draft, Map<String, String> errors) {
+    static long amount(String key, Map<String, String> draft, Map<String, String> errors) {
         try {
             return Rubles.parse(draft.get(key));
         } catch (IllegalArgumentException invalid) {
