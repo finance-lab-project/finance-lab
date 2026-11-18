@@ -17,6 +17,7 @@
         <strong>Бюджет</strong>
         <a class="nav-link" th:href="@{/months/{p}(p=${period})}">Месяц</a>
         <span class="selected" aria-current="page">Настройки</span>
+        <a class="nav-link" th:href="@{/history}">Ввод истории</a>
     </aside>
     <main id="settings">
         <form id="plan-form" th:action="@{/settings}" method="post"

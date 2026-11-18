@@ -345,6 +345,114 @@ class MarchBudgetTest {
         }
     }
 
+    @Test
+    void correctingPreviousYearRecalculatesCurrentAndFuturePlansAndKeepsPastSnapshots() throws Exception {
+        String december = "/history/2026-12";
+        try (var app = start()) {
+            var owner = signedIn(app, "owner-a");
+            assertThat(owner.get(MARCH).html().expectFirst("aside a[href^=/history]").text()).isEqualTo("Ввод истории");
+            assertThat(owner.get("/history?year=2027&month=3").status()).isEqualTo(400);
+            assertThat(owner.get("/history?year=2026&month=12").status()).isEqualTo(302);
+            assertFood(owner.get("/months/2027-01").html(), "24 000", "−2 000");
+            assertFood(owner.get("/months/2027-02").html(), "24 000", "−3 000");
+            assertFood(owner.get(MARCH).html(), "24 000", "−2 000");
+
+            Document draft = owner.get(december).html();
+            assertThat(draft.expectFirst("#plan-food").val()).isEqualTo("22 000");
+            assertThat(draft.expectFirst("#amount-food").val()).isEqualTo("24 000");
+            assertThat(draft.select(".history-share").eachText()).hasSize(10).containsOnly("—");
+            assertThat(draft.expectFirst("#income").val()).isEqualTo("0");
+            assertThat(owner.saveHistory(draft, Map.of("amount-food", "36 000", "contributions", "2500")).status())
+                    .isEqualTo(302);
+            assertThat(owner.saveHistory(draft, Map.of("amount-food", "48000")).status()).isEqualTo(409);
+            var oldMonth = owner.get("/months/2026-12").html();
+            assertThat(oldMonth.expectFirst("#actual-income").text()).isEqualTo("0 ₽");
+            assertThat(oldMonth.expectFirst("#actual-contributions").text()).isEqualTo("2 500 ₽");
+            assertThat(oldMonth.expectFirst("#row-food .plan").text()).isEqualTo("22 000 ₽");
+
+            for (String path : List.of(MARCH, "/months/2027-04", "/months/2028-01")) {
+                var month = owner.get(path).html();
+                assertFood(month, "25 000", "−14 000");
+                assertThat(month.expectFirst("#plan-needs").text()).isEqualTo("41 000 ₽");
+                assertThat(month.expectFirst("#row-housing .plan").text()).isEqualTo("13 000 ₽");
+                assertThat(month.expectFirst("#row-health .plan").text()).isEqualTo("3 000 ₽");
+                assertThat(month.expectFirst("#row-leisure .plan").text()).isEqualTo("11 400 ₽");
+                assertThat(month.expectFirst("#row-travel .plan").text()).isEqualTo("7 600 ₽");
+            }
+            assertFood(owner.get("/months/2027-01").html(), "24 000", "−14 000");
+            assertFood(owner.get("/months/2027-02").html(), "24 000", "−15 000");
+            assertFood(signedIn(app, "owner-b").get(MARCH).html(), "24 000", "−2 000");
+        }
+        try (var app = start()) {
+            var owner = signedIn(app, "owner-a");
+            assertFood(owner.get(MARCH).html(), "25 000", "−14 000");
+            assertThat(owner.get(december).html().expectFirst("#amount-food").val()).isEqualTo("36 000");
+        }
+    }
+
+    @Test
+    void partialBackfillCommitsEachMonthAndRollsBackAnUnsuccessfulRecalculation() throws Exception {
+        try (var app = start(false)) {
+            var owner = signedIn(app, "owner-a");
+            Document settings = owner.get("/settings").html();
+            var food = new PlanDraft.Row("", "Продукты", "essential", "amount", "4000");
+            var health = new PlanDraft.Row("", "Здоровье", "essential", "amount", "1000");
+            var leisure = new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "100");
+            assertThat(owner.plan(settings, new PlanDraft("10000", "incomePercent", "40", List.of(food, health, leisure)))
+                    .status()).isEqualTo(204);
+            String code = settingsDraft(owner.get("/settings").html()).rows().getFirst().code();
+            String planKey = "plan-" + code;
+            String actualKey = "amount-" + code;
+            String row = "#row-" + code;
+            String january = "/history/2026-01";
+            String december = "/history/2026-12";
+
+            assertThat(owner.saveHistory(owner.get(january).html(), Map.of(planKey, "10000", actualKey, "12 006")).status())
+                    .isEqualTo(302);
+            Document marchAfterJanuary = owner.get(MARCH).html();
+            assertThat(marchAfterJanuary.expectFirst(row + " .plan").text()).isEqualTo("1 001 ₽");
+            assertThat(marchAfterJanuary.expectFirst(row + " .buffer").text()).isEqualTo("−2 006 ₽");
+            assertThat(marchAfterJanuary.select(".plan").eachText()).containsExactly("1 001 ₽", "1 000 ₽", "3 999 ₽");
+
+            Document draft = owner.get(december).html();
+            var rejected = owner.saveHistory(draft, Map.of(planKey, "10000", actualKey, "23 994,50", "income", "60000"));
+            assertThat(rejected.status()).isEqualTo(422);
+            assertThat(rejected.html().expectFirst("#" + actualKey).val()).isEqualTo("23 994,50");
+
+            var jdbc = app.getBean(org.springframework.jdbc.core.simple.JdbcClient.class);
+            jdbc.sql("""
+                    CREATE TRIGGER reject_recalculation BEFORE UPDATE OF plan ON category_month
+                    WHEN NEW.period = '2027-03' AND NEW.plan <> OLD.plan
+                    BEGIN SELECT RAISE(ABORT, 'fixture failure'); END
+                    """).update();
+            var decemberAmounts = Map.of(planKey, "10000", actualKey, "23994", "income", "60000");
+            assertThat(owner.saveHistory(draft, decemberAmounts).status()).isEqualTo(500);
+            assertThat(owner.get(december).html().expectFirst("#income").val()).isEqualTo("0");
+            assertThat(owner.get(december).html().expectFirst("#" + planKey).val()).isEmpty();
+            assertThat(owner.get(MARCH).html().expectFirst(row + " .plan").text()).isEqualTo("1 001 ₽");
+            assertThat(owner.get(MARCH).html().expectFirst(row + " .buffer").text()).isEqualTo("−2 006 ₽");
+
+            jdbc.sql("DROP TRIGGER reject_recalculation").update();
+            assertThat(owner.saveHistory(draft, decemberAmounts).status()).isEqualTo(302);
+            assertThat(owner.get(MARCH).html().select(".plan").eachText()).containsExactly("3 000 ₽", "1 000 ₽", "2 000 ₽");
+            assertThat(owner.get(MARCH).html().expectFirst(row + " .buffer").text()).isEqualTo("−16 000 ₽");
+            Document saved = owner.get(december).html();
+            assertThat(saved.expectFirst(row + " [data-history-share^=amount]").text()).isEqualTo("39,99 %");
+
+            assertThat(owner.saveHistory(saved, Map.of(planKey, "11000")).status()).isEqualTo(302);
+            assertThat(owner.get("/months/2026-12").html().expectFirst(row + " .plan").text()).isEqualTo("11 000 ₽");
+            assertThat(owner.get(january).html().expectFirst("#" + planKey).val()).isEqualTo("10 000");
+            var future = owner.get("/months/2028-01").html();
+            assertThat(future.expectFirst(row + " .plan").text()).isEqualTo("3 000 ₽");
+            assertThat(future.expectFirst(row + " .buffer").text()).isEqualTo("−15 000 ₽");
+        }
+    }
+
+    private static void assertFood(Document month, String plan, String buffer) {
+        assertThat(month.expectFirst("#row-food .plan").text()).isEqualTo(plan + " ₽");
+        assertThat(month.expectFirst("#row-food .buffer").text()).isEqualTo(buffer + " ₽");
+    }
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private static PlanDraft settingsDraft(Document page) {
@@ -426,6 +534,16 @@ class MarchBudgetTest {
             var fields = monthFields(form);
             fields.putAll(edits);
             return post(form.expectFirst("#month-form").attr("action"), fields);
+        }
+
+        Page saveHistory(Document page, Map<String, String> edits) throws IOException, InterruptedException {
+            var form = page.expectFirst("#history-form");
+            Map<String, String> fields = new HashMap<>();
+            for (var input : form.select("input[name]")) {
+                fields.put(input.attr("name"), input.val());
+            }
+            fields.putAll(edits);
+            return post(form.attr("action"), fields);
         }
 
         Page plan(Document page, PlanDraft draft) throws IOException, InterruptedException {

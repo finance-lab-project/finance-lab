@@ -27,7 +27,7 @@ button:disabled { opacity: .65; cursor: wait; }
 aside { padding: 2rem 1rem; background: #f0edf5; }
 aside strong, .selected { display: block; padding: .55rem 1.1rem; }
 .selected { margin-top: .35rem; background: #eaddff; color: #391e72; border-radius: 2rem; }
-#month { width: 100%; max-width: 82rem; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; margin-inline: auto; }
+#month, #history { width: 100%; max-width: 82rem; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; margin-inline: auto; }
 .period-bar, .actions { display: flex; align-items: center; gap: .65rem; }
 .period-bar { justify-content: space-between; padding: .45rem 0 .9rem; }
 .period-picker { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .4rem; }
@@ -74,7 +74,7 @@ input[aria-invalid="true"] { border-color: var(--error); }
     .selected { margin: 0; }
 }
 @media (max-width: 46rem) {
-    #month { padding: .6rem 1rem 2rem; }
+    #month, #history { padding: .6rem 1rem 2rem; }
     .period-bar { position: sticky; top: 0; z-index: 1; flex-wrap: wrap; background: #faf9fc; border-bottom: 1px solid var(--line); }
     .actions { gap: .25rem; }
     .actions > * { padding-inline: .8rem; }
@@ -109,9 +109,24 @@ input[aria-invalid="true"] { border-color: var(--error); }
 .plan-row select { width: 100%; min-height: 44px; font: inherit; color: inherit; background: white; border: 1px solid #79747e; border-radius: .35rem; }
 .plan-row .remove-row { margin-top: .5rem; }
 #add-category { margin-top: .5rem; }
+.history-figures .plan-row { margin: .4rem 0; }
+.history-note { background: #f0edf5; }
+.history-table { margin-top: .8rem; }
+.history-table th, .history-table td { text-align: left; }
+.history-table th:first-child { width: 23%; overflow-wrap: anywhere; }
+.history-table td { width: 22%; }
+.history-table td[data-label$="%"] { width: 16.5%; }
+.history-table input { min-width: 0; }
+.history-table .actual-field span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.history-share { display: block; min-height: 44px; padding: .6rem .75rem; border-radius: .35rem; background: #f0edf5; }
+.saved-value { display: none; margin-top: .2rem; }
+.actual-field:has(input.modified) + .saved-value { display: block; }
 [hidden] { display: none !important; }
 @media (max-width: 46rem) {
     #settings { padding: .6rem 1rem 2rem; }
     .field-grid { grid-template-columns: 1fr; }
     aside { flex-wrap: wrap; }
+    .history-table th:first-child, .history-table td, .history-table td[data-label$="%"] { width: auto; }
+    .history-table td { align-items: baseline; }
+    .history-amount, .history-share { width: 65%; }
 }

@@ -116,7 +116,9 @@ final class PlanCalculator {
     }
 
     static String displayedPercent(long amount, long income) {
-        return income == 0 ? "" : Fraction.of(amount, income).asPercent();
+        if (income == 0) return "";
+        if (income > 0) return Fraction.of(amount, income).asPercent();
+        return new Fraction(BigInteger.valueOf(amount).negate(), BigInteger.valueOf(income).negate()).asPercent();
     }
 
     private static Fraction fromIncomePercent(String value, long income) {

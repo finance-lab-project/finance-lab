@@ -4,15 +4,24 @@ function comparisonValue(text) {
         ? value.replaceAll(" ", "").replace(/\.0+$/, "") : text;
 }
 
-function initMonth() {
-    const main = document.getElementById("month");
-    const form = main.querySelector("#month-form");
+function wholeRubles(text) {
+    const value = comparisonValue(text);
+    if (value.trim() === "") return 0;
+    return /^[+-]?\d+$/.test(value) ? Number(value) : NaN;
+}
+
+const historyPercent = new Intl.NumberFormat("ru-RU", {style: "percent", maximumSignificantDigits: 5});
+
+function initMonthForm() {
+    const main = document.querySelector("#month, #history");
+    const form = main.querySelector("#month-form, #history-form");
     const notice = main.querySelector("#unsaved");
     if (!notice) return;
     const picker = main.querySelector("#period-picker");
     const dialog = main.querySelector("#unsaved-dialog");
     const error = main.querySelector("#request-error");
     const fields = form.querySelectorAll("[data-saved]");
+    const shares = form.querySelectorAll("[data-history-share]");
     let destination;
 
     function markChanges() {
@@ -74,8 +83,19 @@ function initMonth() {
     form.addEventListener("input", event => {
         clearError(event.target);
         markChanges();
+        updateShares();
     });
     markChanges();
+    updateShares();
+
+    function updateShares() {
+        if (shares.length === 0) return;
+        const income = wholeRubles(form.elements.income.value);
+        for (const output of shares) {
+            const amount = wholeRubles(form.elements[output.dataset.historyShare].value);
+            output.value = income && Number.isFinite(amount) ? historyPercent.format(amount / income) : "—";
+        }
+    }
 
     async function save(target) {
         if (main.inert) return;
@@ -85,7 +105,7 @@ function initMonth() {
         try {
             const response = await fetch(form.action, {method: "POST", body: data});
             const page = new DOMParser().parseFromString(await response.text(), "text/html");
-            const updated = page.getElementById("month");
+            const updated = page.getElementById(main.id);
             if (response.ok && updated?.querySelector("#save-success")) {
                 if (target) {
                     window.location.assign(target);
@@ -100,7 +120,7 @@ function initMonth() {
                 return;
             }
             main.replaceWith(updated);
-            initMonth();
+            initMonthForm();
             updated.querySelector("#save-success, #save-conflict, [aria-invalid=true]")?.focus();
         } catch {
             error.textContent = "Нет подтверждения от сервера. Проверьте соединение и нажмите «Сохранить» ещё раз.";
@@ -140,4 +160,4 @@ function initMonth() {
     });
 }
 
-initMonth();
+initMonthForm();
