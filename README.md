@@ -26,6 +26,17 @@ Google's Material Design is the primary reference for UI/UX decisions.
 The `docs/` directory is the main source of project documentation. Changes are
 recorded in Git; the Wiki is reserved for possible future use.
 
+## Releases
+
+Each milestone delivers a version the owner can use at the same address. Keep the current release available while the next milestone is in development. A small improvement or an urgent fix can ship as a patch release before the milestone closes.
+
+1. Build and test one versioned artifact from the release commit. Retain the artifact, its checksum and the previous working version.
+2. Check the candidate with synthetic data. Before an upgrade, back up the owner's database, check database compatibility and prepare a rollback that preserves recent saves.
+3. Deploy the tested artifact and verify sign-in, a saved monthly total and readback from another device at the stable HTTPS address. If the check fails, recover the service before announcing a release.
+4. Publish the matching Git tag and GitHub Release with the user-visible changes and deployed revision. Close the milestone after the deployed version passes the check.
+
+The [first personal release, v0.1.0](https://github.com/finance-lab-project/finance-lab/milestone/3), runs alongside the [previous Yandex Cloud release](https://github.com/finance-lab-project/app/issues/6). The [launch issue](https://github.com/finance-lab-project/finance-lab/issues/24) tracks private access, recovery and the first deployment.
+
 ## Run the budget
 
 Use JDK 25 and Maven 3.9 or newer. From the repository root, build the
