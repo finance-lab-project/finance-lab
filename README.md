@@ -28,14 +28,13 @@ recorded in Git; the Wiki is reserved for possible future use.
 
 ## Releases
 
-Each milestone delivers a version the owner can use at the same address. Keep the current release available while the next milestone is in development. A small improvement or an urgent fix can ship as a patch release before the milestone closes.
+Each milestone delivers a usable version at the same HTTPS address. Milestone releases and smaller patch releases use the weekly maintenance window. Build and test the candidate in advance and retain the versioned artifact, its checksum and the previous working binary.
 
-1. Build and test one versioned artifact from the release commit. Retain the artifact, its checksum and the previous working version.
-2. Check the candidate with synthetic data. Before an upgrade, back up the owner's database, check database compatibility and prepare a rollback that preserves recent saves.
-3. Deploy the tested artifact and verify sign-in, a saved monthly total and readback from another device at the stable HTTPS address. If the check fails, recover the service before announcing a release.
-4. Publish the matching Git tag and GitHub Release with the user-visible changes and deployed revision. Close the milestone after the deployed version passes the check.
+- The backup starts on Sunday at 03:00 Europe/Moscow. After it succeeds, verify the backup and check saved budget data using private reference values. Perform the weekly check even when there is no release candidate.
+- If a tested candidate is ready and the checks pass, deploy it in that window. Keep writes consistent across the switch, verify sign-in and compare the saved month and yearly total before reopening writes. A failed backup or pre-update check defers the update. If post-update verification fails, recover the service while preserving accepted saves.
+- Publish the matching Git tag and GitHub Release after verification at the permanent address. Include the deployed revision and user-visible changes. Close the milestone when its version is available.
 
-The [first personal release, v0.1.0](https://github.com/finance-lab-project/finance-lab/milestone/3), runs alongside the [previous Yandex Cloud release](https://github.com/finance-lab-project/app/issues/6). The [launch issue](https://github.com/finance-lab-project/finance-lab/issues/24) tracks private access, recovery and the first deployment.
+The [first personal release, v0.1.0](https://github.com/finance-lab-project/finance-lab/milestone/3), replaces the [previous Yandex Cloud application](https://github.com/finance-lab-project/app/issues/6) at the existing address. The new owner starts with an empty SQLite budget. The [launch issue](https://github.com/finance-lab-project/finance-lab/issues/24) covers the switch and retirement of the legacy PostgreSQL budget database.
 
 ## Run the budget
 
