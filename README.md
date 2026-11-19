@@ -26,6 +26,16 @@ Google's Material Design is the primary reference for UI/UX decisions.
 The `docs/` directory is the main source of project documentation. Changes are
 recorded in Git; the Wiki is reserved for possible future use.
 
+## Releases
+
+Each milestone delivers a usable version at the same HTTPS address. Milestone releases and smaller patch releases use the weekly maintenance window. Build and test the candidate in advance and retain the versioned artifact, its checksum and the previous working binary.
+
+- The backup starts on Sunday at 03:00 Europe/Moscow. After it succeeds, verify the backup and check saved budget data using private reference values. Perform the weekly check even when there is no release candidate.
+- If a tested candidate is ready and the checks pass, deploy it in that window. Keep writes consistent across the switch, verify sign-in and compare the saved month and yearly total before reopening writes. A failed backup or pre-update check defers the update. If post-update verification fails, recover the service while preserving accepted saves.
+- Publish the matching Git tag and GitHub Release after verification at the permanent address. Include the deployed revision and user-visible changes. Close the milestone when its version is available.
+
+The [first personal release, v0.1.0](https://github.com/finance-lab-project/finance-lab/milestone/3), replaces the [previous Yandex Cloud application](https://github.com/finance-lab-project/app/issues/6) at the existing address. The new owner starts with an empty SQLite budget. The [launch issue](https://github.com/finance-lab-project/finance-lab/issues/24) covers the switch and retirement of the legacy PostgreSQL budget database.
+
 ## Run the budget
 
 Use JDK 25 and Maven 3.9 or newer. From the repository root, build the
