@@ -75,8 +75,12 @@ class MarchBudgetTest {
             assertMonth(phone.get(MARCH).html(), "6 000", "20 000", "18 000");
 
             assertThat(desktop.save(form, "25 000").status()).isEqualTo(302);
-            assertThat(desktop.get(MARCH).html().selectFirst("#save-success")).isNotNull();
-            assertMonth(phone.get(MARCH).html(), "25 000", "39 000", "−1 000");
+            Document desktopSaved = desktop.get(MARCH).html();
+            assertThat(desktopSaved.selectFirst("#save-success")).isNotNull();
+            assertThat(desktopSaved.expectFirst("#row-food .available").text()).isEqualTo("−3 000 ₽");
+            Document phoneSaved = phone.get(MARCH).html();
+            assertMonth(phoneSaved, "25 000", "39 000", "−1 000");
+            assertThat(phoneSaved.expectFirst("#row-food .available").text()).isEqualTo("−3 000 ₽");
             Document repeat = phone.get(EDIT).html();
             assertThat(phone.save(repeat, "25 000").status()).isEqualTo(302);
             assertThat(revision(phone.get(EDIT).html())).isEqualTo(revision(repeat));
@@ -117,6 +121,8 @@ class MarchBudgetTest {
             assertThat(invalid.html().expectFirst("#income").val()).isEqualTo("73 001");
             assertThat(invalid.html().expectFirst("#percent-leisure").val()).isEqualTo("112,3455");
             assertThat(invalid.html().expectFirst("#amount-leisure").val()).isEqualTo("112 346");
+            assertThat(invalid.html().expectFirst("#amount-food").val()).isEqualTo("25 000,00");
+            assertThat(invalid.html().expectFirst("#row-food .available").text()).isEqualTo("16 000 ₽");
             assertMonth(phone.get(MARCH).html(), "6 000", "20 000", "18 000");
             assertThat(phone.get(MARCH).html().expectFirst("#actual-income").text()).isEqualTo("50 000 ₽");
 
@@ -262,6 +268,16 @@ class MarchBudgetTest {
             assertThat(februarySaved.expectFirst("#row-food .buffer").text()).isEqualTo("−6 000 ₽");
             assertThat(februarySaved.expectFirst("#row-food .plan").text()).isEqualTo("24 000 ₽");
             assertThat(februarySaved.expectFirst("#actual-income").text()).isEqualTo("102 000 ₽");
+
+            String availableLabel = "Доступно с учётом буфера";
+            assertThat(februarySaved.select("thead th").eachText()).contains(availableLabel);
+            var travel = februarySaved.expectFirst("#row-travel");
+            assertThat(travel.expectFirst(".plan").text()).isEqualTo("8 000 ₽");
+            assertThat(travel.expectFirst(".actual").text()).isEqualTo("6 000 ₽");
+            assertThat(travel.expectFirst(".remainder").text()).isEqualTo("2 000 ₽");
+            assertThat(travel.expectFirst(".buffer").text()).isEqualTo("3 000 ₽");
+            assertThat(travel.expectFirst(".available").attr("data-label")).isEqualTo(availableLabel);
+            assertThat(travel.expectFirst(".available").text()).isEqualTo("5 000 ₽");
 
             var nextYear = owner.get("/months/2028-01?edit=true").html();
             assertThat(nextYear.expectFirst("#actual-income").text()).isEqualTo("0 ₽");

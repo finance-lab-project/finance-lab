@@ -95,6 +95,7 @@
                         <th scope="col">Категория</th><th scope="col">План на месяц</th>
                         <th th:if="${allocation != null}" scope="col">Доля дохода</th><th scope="col">Потрачено</th>
                         <th scope="col">Остаток месяца</th><th scope="col">Буфер на начало месяца</th>
+                        <th scope="col">Доступно с учётом буфера</th>
                     </tr></thead>
                     <tbody>
                     <tr th:each="row : ${month.categories()}" th:id="|row-${row.code()}|">
@@ -122,6 +123,9 @@
                             th:text="${@rubles.display(row.remainder())}"></td>
                         <td data-label="Буфер на начало месяца" class="buffer" th:classappend="${row.buffer() < 0} ? 'negative'"
                             th:text="${@rubles.display(row.buffer())}"></td>
+                        <td data-label="Доступно с учётом буфера" class="available"
+                            th:classappend="${row.available().signum() < 0} ? 'negative'"
+                            th:text="${@rubles.display(row.available())}"></td>
                     </tr>
                     </tbody>
                 </table>

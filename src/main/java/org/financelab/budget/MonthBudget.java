@@ -86,5 +86,10 @@ public record MonthBudget(@Nullable Terms terms, Figures figures, List<Category>
         public BigInteger remainder() {
             return BigInteger.valueOf(plan).subtract(BigInteger.valueOf(actual));
         }
+
+        /** {@return the remaining amount including the opening buffer, in whole rubles} */
+        public BigInteger available() {
+            return remainder().add(BigInteger.valueOf(buffer));
+        }
     }
 }

@@ -77,6 +77,9 @@ input[aria-invalid="true"] { border-color: var(--error); }
     aside { display: flex; align-items: center; gap: .5rem; padding: .4rem 1rem; }
     .selected { margin: 0; }
 }
+@media (46rem < width <= 54rem) {
+    #month th, #month td { padding-inline: .35rem; }
+}
 @media (max-width: 46rem) {
     #month, #history, #year-report { padding: .6rem 1rem 2rem; }
     .period-bar { position: sticky; top: 0; z-index: 1; flex-wrap: wrap; background: #faf9fc; border-bottom: 1px solid var(--line); }
