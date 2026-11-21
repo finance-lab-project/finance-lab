@@ -22,6 +22,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,6 +32,38 @@ class MarchBudgetTest {
     private static final String MARCH = "/months/2027-03";
     private static final String EDIT = MARCH + "?edit=true";
     @TempDir Path directory;
+
+    @Test
+    void pilotReopensTheSameMonthFromAnotherSessionAndAfterCredentialRotation() throws Exception {
+        String login = "pilot-owner";
+        String firstPassword = "first-synthetic-pilot-password";
+        String replacement = "replacement-synthetic-pilot-password";
+        try (var app = startPilot(firstPassword)) {
+            var desktop = new Browser(app);
+            var phone = new Browser(app);
+            assertThat(desktop.get(MARCH).status()).isEqualTo(302);
+            for (String fixture : List.of("owner-a", "owner-b")) {
+                desktop.login(fixture, "fixture-" + fixture);
+                assertThat(desktop.get(MARCH).status()).isEqualTo(302);
+            }
+            desktop.login(login, firstPassword);
+            phone.login(login, firstPassword);
+            Document empty = desktop.get(MARCH).html();
+            assertThat(empty.text()).contains("План пока не задан");
+            assertThat(empty.expectFirst("#actual-income").text()).isEqualTo("0 ₽");
+            assertThat(app.getBean(JdbcClient.class).sql("SELECT count(*) FROM category_month")
+                    .query(Long.class).single()).isZero();
+            assertThat(desktop.save(desktop.get(EDIT).html(), Map.of("income", "12345")).status()).isEqualTo(302);
+            assertThat(phone.get(MARCH).html().expectFirst("#actual-income").text()).isEqualTo("12 345 ₽");
+        }
+        try (var restarted = startPilot(replacement)) {
+            var browser = new Browser(restarted);
+            browser.login(login, firstPassword);
+            assertThat(browser.get(MARCH).status()).isEqualTo(302);
+            browser.login(login, replacement);
+            assertThat(browser.get(MARCH).html().expectFirst("#actual-income").text()).isEqualTo("12 345 ₽");
+        }
+    }
 
     @Test
     void savedReplacementSurvivesRefreshRepeatAndRestart() throws Exception {
@@ -543,7 +576,7 @@ class MarchBudgetTest {
 
     private ConfigurableApplicationContext start(boolean demo, String currentMonth) {
         var builder = new SpringApplicationBuilder(FinanceLabApplication.class);
-        if (demo) builder.profiles("demo");
+        builder.profiles(demo ? "demo" : "fixture");
         return builder.run("--budget.current-month=" + currentMonth,
                 "--server.port=0", "--server.address=127.0.0.1",
                 "--spring.datasource.url=jdbc:sqlite:" + directory.resolve("budget.sqlite"),
@@ -551,11 +584,17 @@ class MarchBudgetTest {
                 "--spring.main.banner-mode=off", "--logging.level.root=WARN");
     }
 
+    private ConfigurableApplicationContext startPilot(String password) {
+        return new SpringApplicationBuilder(FinanceLabApplication.class).run(
+                "--budget.current-month=2027-03", "--server.port=0", "--server.address=127.0.0.1",
+                "--BUDGET_DB=" + directory.resolve("pilot.sqlite"),
+                "--BUDGET_PILOT_PASSWORD_HASH=" + new BCryptPasswordEncoder().encode(password),
+                "--spring.main.banner-mode=off", "--logging.level.root=WARN");
+    }
+
     private static Browser signedIn(ConfigurableApplicationContext app, String name) throws Exception {
         var browser = new Browser(app);
-        Document login = browser.get("/login").html();
-        assertThat(browser.post("/login", Map.of("username", name, "password", "fixture-" + name,
-                "_csrf", csrf(login))).status()).isEqualTo(302);
+        browser.login(name, "fixture-" + name);
         return browser;
     }
 
@@ -592,6 +631,12 @@ class MarchBudgetTest {
 
         Browser(ConfigurableApplicationContext app) {
             base = URI.create("http://127.0.0.1:" + app.getEnvironment().getRequiredProperty("local.server.port"));
+        }
+
+        void login(String name, String password) throws IOException, InterruptedException {
+            Document form = get("/login").html();
+            assertThat(post("/login", Map.of("username", name, "password", password, "_csrf", csrf(form))).status())
+                    .isEqualTo(302);
         }
 
         Page get(String path) throws IOException, InterruptedException {

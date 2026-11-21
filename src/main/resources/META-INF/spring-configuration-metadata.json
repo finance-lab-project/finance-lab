@@ -6,6 +6,11 @@
       "description": "Override the calendar month for a reproducible walkthrough (yyyy-MM)."
     },
     {
+      "name": "budget.pilot-password-hash",
+      "type": "java.lang.String",
+      "description": "Bcrypt hash of the private pilot owner password."
+    },
+    {
       "name": "budget.owner-a-password",
       "type": "java.lang.String",
       "description": "Password for the synthetic owner-a account."
