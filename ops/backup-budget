@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+stage=configuration
+work=
+trap 'status=$?; if (( status != 0 )); then printf "Weekly budget backup failed during %s.\n" "$stage" >&2; fi
+      if [[ -n $work ]]; then rm -rf -- "$work"; fi' EXIT
+
+: "${BUDGET_DB:?}" "${RUNTIME_DIRECTORY:?}" "${CREDENTIALS_DIRECTORY:?}"
+: "${S3_ENDPOINT:?}" "${BACKUP_BUCKET:?}"
+export AWS_SHARED_CREDENTIALS_FILE="$CREDENTIALS_DIRECTORY/aws-credentials"
+export AWS_PAGER=
+snapshot_tool=$(dirname -- "$0")/budget-snapshot.py
+work=$(mktemp -d "$RUNTIME_DIRECTORY/snapshot.XXXXXXXX")
+snapshot=$work/budget.sqlite
+archive=$work/budget.sqlite.age
+started=$(date -u +%Y%m%dT%H%M%SZ)
+
+stage=snapshot
+python3 "$snapshot_tool" create "$BUDGET_DB" "$snapshot"
+stage=encryption
+age -R "$CREDENTIALS_DIRECTORY/age-recipient" "$snapshot" > "$archive"
+checksum=$(sha256sum "$archive")
+digest=${checksum%% *}
+key="database/sqlite/$started-$digest.sqlite.age"
+object="s3://$BACKUP_BUCKET/$key"
+
+stage=upload
+aws --endpoint-url "$S3_ENDPOINT" s3 cp "$archive" "$object" --only-show-errors
+stage=readback
+readback=$(aws --endpoint-url "$S3_ENDPOINT" s3 cp "$object" - --only-show-errors | sha256sum)
+if [[ ${readback%% *} != "$digest" ]]; then
+    echo 'Uploaded ciphertext failed SHA-256 verification.' >&2
+    exit 1
+fi
+
+stage=verification
+python3 "$snapshot_tool" check "$snapshot" --reference "$CREDENTIALS_DIRECTORY/reference.json"
+printf 'Weekly budget backup verified. Object key: %s SHA-256: %s\n' "$key" "$digest"

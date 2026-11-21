@@ -1,0 +1,25 @@
+[Unit]
+Description=Back up and verify the Finance Lab SQLite budget
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=finance-budget
+Group=finance-budget
+UMask=0077
+RuntimeDirectory=finance-budget-backup
+RuntimeDirectoryMode=0700
+Environment=BUDGET_DB=/var/lib/finance-budget/budget.sqlite
+EnvironmentFile=/etc/finance-budget/backup.env
+LoadCredential=aws-credentials:/etc/finance-budget/backup-aws.credentials
+LoadCredential=age-recipient:/etc/finance-budget/backup-recipient
+LoadCredential=reference.json:/etc/finance-budget/backup-reference.json
+ExecStart=/usr/local/libexec/finance-budget/backup-budget
+TimeoutStartSec=10min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# SQLite may need to create WAL sidecars even when the database connection is read-only.
+ReadWritePaths=/var/lib/finance-budget
