@@ -131,7 +131,7 @@ database.
 
 ```sh
 BUDGET_DB="$restore_dir/budget.sqlite" BUDGET_BIND=127.0.0.1 \
-  java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0-SNAPSHOT.jar \
+  java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0.jar \
   --spring.profiles.active=pilot --server.port=18086
 ```
 

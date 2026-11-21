@@ -53,7 +53,7 @@ mvn verify
 export BUDGET_OWNER_A_PASSWORD="$(openssl rand -hex 12)"
 export BUDGET_OWNER_B_PASSWORD="$(openssl rand -hex 12)"
 printf 'owner-a: %s\nowner-b: %s\n' "$BUDGET_OWNER_A_PASSWORD" "$BUDGET_OWNER_B_PASSWORD"
-java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0-SNAPSHOT.jar --spring.profiles.active=fixture
+java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0.jar --spring.profiles.active=fixture
 ```
 
 The Java option allows the SQLite JDBC driver to load its native library.
