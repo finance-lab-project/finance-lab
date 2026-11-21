@@ -34,7 +34,7 @@ Each milestone delivers a usable version at the same HTTPS address. Milestone re
 - If a tested candidate is ready and the checks pass, deploy it in that window. Keep writes consistent across the switch, verify sign-in and compare the saved month and yearly total before reopening writes. A failed backup or pre-update check defers the update. If post-update verification fails, recover the service while preserving accepted saves.
 - Publish the matching Git tag and GitHub Release after verification at the permanent address. Include the deployed revision and user-visible changes. Close the milestone when its version is available.
 
-The [first personal release, v0.1.0](https://github.com/finance-lab-project/finance-lab/milestone/3), replaces the [previous Yandex Cloud application](https://github.com/finance-lab-project/app/issues/6) at the existing address. The new owner starts with an empty SQLite budget. The [launch issue](https://github.com/finance-lab-project/finance-lab/issues/24) covers the switch and retirement of the legacy PostgreSQL budget database.
+The [first personal release, v0.1.0](https://github.com/finance-lab-project/finance-lab/releases/tag/v0.1.0) replaces the [previous Yandex Cloud application](https://github.com/finance-lab-project/app/issues/6) at the existing address. The new owner starts with an empty SQLite budget. The [launch issue](https://github.com/finance-lab-project/finance-lab/issues/24) covers the switch and retirement of the legacy PostgreSQL budget database.
 
 ## Run the private pilot
 
