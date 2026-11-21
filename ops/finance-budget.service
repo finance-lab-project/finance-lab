@@ -1,0 +1,26 @@
+[Unit]
+Description=Finance Lab private budget
+After=network.target
+
+[Service]
+User=finance-budget
+Group=finance-budget
+StateDirectory=finance-budget
+StateDirectoryMode=0700
+UMask=0077
+Environment=BUDGET_DB=/var/lib/finance-budget/budget.sqlite
+Environment=BUDGET_BIND=127.0.0.1
+Environment=SERVER_PORT=18084
+Environment=SERVER_FORWARD_HEADERS_STRATEGY=native
+Environment=SERVER_SERVLET_SESSION_COOKIE_SECURE=true
+EnvironmentFile=/etc/finance-budget/pilot.env
+ExecStart=/usr/bin/java --enable-native-access=ALL-UNNAMED -jar /opt/finance-budget/current.jar --spring.profiles.active=pilot
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

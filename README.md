@@ -36,7 +36,13 @@ Each milestone delivers a usable version at the same HTTPS address. Milestone re
 
 The [first personal release, v0.1.0](https://github.com/finance-lab-project/finance-lab/milestone/3), replaces the [previous Yandex Cloud application](https://github.com/finance-lab-project/app/issues/6) at the existing address. The new owner starts with an empty SQLite budget. The [launch issue](https://github.com/finance-lab-project/finance-lab/issues/24) covers the switch and retirement of the legacy PostgreSQL budget database.
 
-## Run the budget
+## Run the private pilot
+
+The single-owner pilot uses the existing Yandex Cloud VM and HTTPS address. See the
+[private pilot runbook](docs/private-pilot.md) for `pilot-owner` sign-in, persistent
+SQLite storage, the systemd unit, credential recovery and the two-device release check.
+
+## Run the local fixture
 
 Use JDK 25 and Maven 3.9 or newer. From the repository root, build the
 application and set two distinct disposable passwords for the synthetic
@@ -47,7 +53,7 @@ mvn verify
 export BUDGET_OWNER_A_PASSWORD="$(openssl rand -hex 12)"
 export BUDGET_OWNER_B_PASSWORD="$(openssl rand -hex 12)"
 printf 'owner-a: %s\nowner-b: %s\n' "$BUDGET_OWNER_A_PASSWORD" "$BUDGET_OWNER_B_PASSWORD"
-java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0-SNAPSHOT.jar
+java --enable-native-access=ALL-UNNAMED -jar target/finance-lab-0.1.0-SNAPSHOT.jar --spring.profiles.active=fixture
 ```
 
 The Java option allows the SQLite JDBC driver to load its native library.
@@ -68,7 +74,7 @@ planning income. Enter actual income and investment contributions separately.
 When switching periods with edits, choose whether to save, discard or stay.
 
 The optional `demo` Spring profile opens March 2027 with the worked example for
-both test accounts. To run that walkthrough, start the same jar with
+both test accounts. To run that walkthrough, replace the `fixture` profile on the command line with
 `--spring.profiles.active=demo`. Use a separate `BUDGET_DB` file when trying the
 fixture alongside an empty budget. In March, the initial figures include
 50 000 ₽ actual income, 10 000 ₽ in contributions and 6 000 ₽ spent on food.
