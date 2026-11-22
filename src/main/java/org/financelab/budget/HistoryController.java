@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.financelab.budget.MonthStore.HistoricalCategory;
+import org.financelab.budget.MonthStore.HistoricalEdit;
 import org.financelab.budget.MonthStore.History;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -64,7 +64,7 @@ class HistoryController {
         if (revision == saved.figures().revision() && planRevision == saved.planRevision()) {
             long income = MonthActuals.amount("income", draft, errors);
             long contributions = MonthActuals.amount("contributions", draft, errors);
-            List<HistoricalCategory> categories = parseCategories(saved, draft, errors);
+            List<HistoricalEdit> categories = parseCategories(saved, draft, errors);
             if (!errors.isEmpty()) {
                 response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
                 model.addAttribute("draft", draft);
@@ -113,9 +113,9 @@ class HistoryController {
         return fields;
     }
 
-    private static List<HistoricalCategory> parseCategories(History saved, Map<String, String> draft,
-                                                            Map<String, String> errors) {
-        List<HistoricalCategory> categories = new ArrayList<>();
+    private static List<HistoricalEdit> parseCategories(History saved, Map<String, String> draft,
+                                                        Map<String, String> errors) {
+        List<HistoricalEdit> categories = new ArrayList<>();
         for (var row : saved.categories()) {
             String planKey = "plan-" + row.code();
             String actualKey = "amount-" + row.code();
@@ -126,7 +126,7 @@ class HistoryController {
             long plan = !row.recorded() && planMissing ? 0 : MonthActuals.amount(planKey, draft, errors);
             long actual = !row.recorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
             if (plan < 0) errors.put(planKey, "Плановая сумма не может быть отрицательной.");
-            categories.add(new HistoricalCategory(row.code(), row.name(), plan, actual, true));
+            categories.add(new HistoricalEdit(row.code(), plan, actual, !actualMissing));
         }
         return categories;
     }

@@ -578,6 +578,35 @@ class MarchBudgetTest {
     }
 
     @Test
+    void explicitlySavedZeroExpensesCountAtRolloverAndAfterHistorySave() throws Exception {
+        var draft = new PlanDraft("10000", "incomePercent", "40", List.of(
+                new PlanDraft.Row("", "Транспорт", "essential", "amount", "1000"),
+                new PlanDraft.Row("", "Здоровье", "essential", "amount", "1500"),
+                new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "100")));
+        String health;
+        try (var app = start(false, "2027-12")) {
+            var owner = signedIn(app, "owner-a");
+            assertThat(owner.plan(owner.get("/settings").html(), draft).status()).isEqualTo(204);
+            var rows = settingsDraft(owner.get("/settings").html()).rows();
+            String transport = rows.getFirst().code();
+            health = rows.get(1).code();
+            assertThat(owner.saveHistory(owner.get("/history/2027-01").html(),
+                    Map.of("amount-" + transport, "0", "plan-" + health, "1500")).status()).isEqualTo(302);
+        }
+
+        try (var app = start(false, "2028-01")) {
+            var owner = signedIn(app, "owner-a");
+            String january = "/months/2028-01";
+            assertThat(owner.get(january).html().select(".plan").eachText())
+                    .containsExactly("0 ₽", "1 500 ₽", "4 500 ₽");
+            assertThat(owner.saveHistory(owner.get("/history/2027-02").html(),
+                    Map.of("amount-" + health, "0")).status()).isEqualTo(302);
+            assertThat(owner.get(january).html().select(".plan").eachText())
+                    .containsExactly("0 ₽", "0 ₽", "6 000 ₽");
+        }
+    }
+
+    @Test
     void partialBackfillCommitsEachMonthAndRollsBackAnUnsuccessfulRecalculation() throws Exception {
         try (var app = start(false)) {
             var owner = signedIn(app, "owner-a");

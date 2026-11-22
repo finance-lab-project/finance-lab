@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 class MonthStore {
     record HistoricalCategory(String code, String name, long plan, long actual, boolean recorded) {}
+    record HistoricalEdit(String code, long plan, long actual, boolean actualProvided) {}
     record History(MonthBudget.Figures figures, long planRevision, List<HistoricalCategory> categories) {
         public String percent(long amount) {
             return figures.income() == 0 ? "—" : PlanCalculator.displayedPercent(amount, figures.income()) + " %";
@@ -138,7 +139,7 @@ class MonthStore {
         if (!claim(owner, month, month, revision, saved.planRevision(), figures)) return false;
 
         for (var row : saved.categories()) {
-            saveCategory(owner, month, row.code(), row.plan(), actuals.spending().get(row.code()), false);
+            saveCategory(owner, month, row.code(), row.plan(), actuals.spending().get(row.code()), false, 0);
         }
         if (changed) refreshPlan(owner, month, period.current());
         return true;
@@ -146,13 +147,14 @@ class MonthStore {
 
     @Transactional
     public boolean replaceHistory(String owner, YearMonth month, History saved, long income, long contributions,
-                                  List<HistoricalCategory> categories) {
+                                  List<HistoricalEdit> categories) {
         YearMonth current = period.current();
         long revision = saved.figures().revision();
         var figures = new MonthBudget.Figures(income, contributions, revision + 1);
         if (!month.isBefore(current) || !claim(owner, month, current, revision, saved.planRevision(), figures)) return false;
         for (var row : categories) {
-            saveCategory(owner, month, row.code(), row.plan(), row.actual(), true);
+            int initialRevision = row.actualProvided() ? 1 : 0;
+            saveCategory(owner, month, row.code(), row.plan(), row.actual(), true, initialRevision);
         }
         refreshPlan(owner, month, current);
         return true;
@@ -166,15 +168,16 @@ class MonthStore {
                 .param("settingsPeriod", settingsMonth.toString()).param("planRevision", planRevision).update() == 1;
     }
 
-    private void saveCategory(String owner, YearMonth month, String category, long plan, long actual, boolean history) {
+    private void saveCategory(String owner, YearMonth month, String category, long plan, long actual,
+                              boolean history, int initialRevision) {
         jdbc.sql("""
-                INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, ?)
+                INSERT INTO category_month (owner, period, category, plan, actual, revision) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (owner, period, category) DO UPDATE
                    SET plan = CASE WHEN ? THEN excluded.plan ELSE category_month.plan END,
                        revision = CASE WHEN category_month.actual = excluded.actual
                                        THEN category_month.revision ELSE category_month.revision + 1 END,
                        actual = excluded.actual
-                """).params(owner, month.toString(), category, plan, actual, history).update();
+                """).params(owner, month.toString(), category, plan, actual, initialRevision, history).update();
     }
 
     private void refreshPlan(String owner, YearMonth savedMonth, YearMonth current) {

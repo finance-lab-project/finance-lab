@@ -90,7 +90,7 @@ class PlanStore {
         if (saved.rows().isEmpty()) return saved;
 
         Map<String, BigInteger> totals = new HashMap<>();
-        // A zero left by editing an expense counts as history. A plan-only row does not.
+        // Explicit zero expenses count as history and have a positive revision.
         jdbc.sql("""
                 SELECT category, actual FROM category_month
                  WHERE owner = ? AND period >= ? AND period < ? AND (actual <> 0 OR revision > 0)
