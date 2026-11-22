@@ -35,8 +35,13 @@ class PlanStore {
                 .optional().orElse(null);
     }
 
-    @Transactional(readOnly = true)
-    public Settings read(String owner, YearMonth month) {
+    @Transactional
+    public Settings read(String owner, YearMonth current) {
+        refreshForYear(owner, current);
+        return savedSettings(owner, current);
+    }
+
+    private Settings savedSettings(String owner, YearMonth month) {
         Terms terms = terms(owner, month);
         if (terms == null) return new Settings(0, PlanDraft.empty());
         List<PlanDraft.Row> rows = jdbc.sql("""
@@ -48,17 +53,47 @@ class PlanStore {
         return new Settings(terms.revision(), new PlanDraft(Long.toString(terms.income()), "fraction", terms.target().stored(), rows));
     }
 
+    // Claim the new snapshot before reading history so simultaneous requests share one refresh.
+    void refreshForYear(String owner, YearMonth current) {
+        YearMonth january = current.withMonth(1);
+        int added = jdbc.sql("""
+                INSERT INTO planning_settings (owner, since, income, target, revision)
+                SELECT owner, :january, income, target, revision + 1
+                  FROM (
+                    SELECT owner, since, income, target, revision FROM planning_settings
+                     WHERE owner = :owner AND since <= :current ORDER BY since DESC LIMIT 1
+                  )
+                 WHERE since < :january
+                """).param("owner", owner).param("current", current.toString())
+                .param("january", january.toString()).update();
+        if (added == 0) return;
+
+        PlanDraft saved = savedSettings(owner, january.minusMonths(1)).draft();
+        var plan = PlanCalculator.evaluate(withHistoricalAverages(owner, january, saved));
+        // Opening the budget must not record an unused month for future carry.
+        saveCategories(owner, january.toString(), current.toString(), plan, false);
+    }
+
     // Called within the month write transaction so the new plans and historical figures commit together.
     void recalculateFromHistory(String owner, YearMonth current) {
-        Settings settings = read(owner, current);
+        Settings settings = savedSettings(owner, current);
         PlanDraft saved = settings.draft();
-        if (saved.rows().isEmpty()) return;
+        PlanDraft updated = withHistoricalAverages(owner, current.withMonth(1), saved);
+        if (updated.rows().equals(saved.rows())) return;
 
-        YearMonth january = current.withMonth(1);
+        if (!save(owner, current, settings.revision(), PlanCalculator.evaluate(updated))) {
+            throw new IllegalStateException("Planning settings changed during the historical save.");
+        }
+    }
+
+    private PlanDraft withHistoricalAverages(String owner, YearMonth january, PlanDraft saved) {
+        if (saved.rows().isEmpty()) return saved;
+
         Map<String, BigInteger> totals = new HashMap<>();
+        // Explicit zero expenses count as history and have a positive revision.
         jdbc.sql("""
                 SELECT category, actual FROM category_month
-                 WHERE owner = ? AND period >= ? AND period < ?
+                 WHERE owner = ? AND period >= ? AND period < ? AND (actual <> 0 OR revision > 0)
                 """).params(owner, january.minusYears(1).toString(), january.toString())
                 .query(rs -> {
                     totals.merge(rs.getString("category"), BigInteger.valueOf(rs.getLong("actual")), BigInteger::add);
@@ -69,12 +104,7 @@ class PlanStore {
             BigInteger monthly = new Fraction(total, BigInteger.valueOf(12)).rounded().max(BigInteger.ZERO);
             return row.withValue("amount", monthly.toString());
         }).toList();
-        if (rows.equals(saved.rows())) return;
-
-        var plan = PlanCalculator.evaluate(new PlanDraft(saved.income(), saved.targetUnit(), saved.targetValue(), rows));
-        if (!save(owner, current, settings.revision(), plan)) {
-            throw new IllegalStateException("Planning settings changed during the historical save.");
-        }
+        return new PlanDraft(saved.income(), saved.targetUnit(), saved.targetValue(), rows);
     }
 
     @Transactional
@@ -86,7 +116,13 @@ class PlanStore {
                 .param("income", Rubles.parse(draft.income())).param("target", draft.targetValue())
                 .param("revision", revision).update();
         if (changed == 0) return false;
+        saveCategories(owner, since, since, plan, true);
+        return true;
+    }
 
+    private void saveCategories(String owner, String since, String firstMutableMonth,
+                                PlanCalculator.Preview plan, boolean recordMonth) {
+        PlanDraft draft = plan.draft();
         jdbc.sql("DELETE FROM planning_category WHERE owner = ? AND since = ?").params(owner, since).update();
         for (int i = 0; i < draft.rows().size(); i++) {
             PlanDraft.Row row = draft.rows().get(i);
@@ -104,13 +140,16 @@ class PlanStore {
                     INSERT INTO planning_category (owner, since, category, name, kind, addition_order, unit, value, plan)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """).params(owner, since, code, row.name().strip(), row.group(), i + 1, row.unit(), row.value(), rubles).update();
+            if (recordMonth) {
+                jdbc.sql("""
+                        INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
+                        ON CONFLICT(owner, period, category) DO UPDATE SET plan = excluded.plan
+                        """).params(owner, since, code, rubles).update();
+            }
             jdbc.sql("""
-                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
-                    ON CONFLICT(owner, period, category) DO UPDATE SET plan = excluded.plan
-                    """).params(owner, since, code, rubles).update();
-            jdbc.sql("UPDATE category_month SET plan = ? WHERE owner = ? AND period > ? AND category = ?")
-                    .params(rubles, owner, since, code).update();
+                    UPDATE category_month SET plan = ?
+                     WHERE owner = ? AND period >= ? AND category = ? AND plan <> ?
+                    """).params(rubles, owner, firstMutableMonth, code, rubles).update();
         }
-        return true;
     }
 }

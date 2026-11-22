@@ -508,6 +508,105 @@ class MarchBudgetTest {
     }
 
     @Test
+    void firstUseInJanuaryRefreshesThePlanBeforeEitherBudgetView() throws Exception {
+        String december = "/months/2027-12";
+        String january = "/months/2028-01";
+        String february = "/months/2028-02";
+        String report = "/years/2028";
+        var categories = new HashMap<String, List<PlanDraft.Row>>();
+        var draft = new PlanDraft("60000", "incomePercent", "40", List.of(
+                new PlanDraft.Row("", "Продукты", "essential", "amount", "10000"),
+                new PlanDraft.Row("", "Транспорт", "essential", "amount", "1000"),
+                new PlanDraft.Row("", "Здоровье", "essential", "amount", "1500"),
+                new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "100")));
+        try (var app = start(false, "2027-12")) {
+            for (String name : List.of("owner-a", "owner-b")) {
+                var owner = signedIn(app, name);
+                assertThat(owner.plan(owner.get("/settings").html(), draft).status()).isEqualTo(204);
+                var rows = settingsDraft(owner.get("/settings").html()).rows();
+                categories.put(name, rows);
+                String food = rows.getFirst().code();
+                String transport = rows.get(1).code();
+                assertThat(owner.saveHistory(owner.get("/history/2027-01").html(),
+                        Map.of("plan-" + food, "132000", "amount-" + food, "132000")).status()).isEqualTo(302);
+                Document edit = owner.get(december + "?edit=true").html();
+                assertThat(edit.expectFirst("#row-" + food + " .plan").text()).isEqualTo("10 000 ₽");
+                assertThat(owner.save(edit, Map.of("income", "55000", "amount-" + food, "12000",
+                        "amount-" + transport, "12006")).status()).isEqualTo(302);
+            }
+        }
+
+        String food = categories.get("owner-a").getFirst().code();
+        String foodRow = "#row-" + food;
+        String januaryRevision;
+        try (var app = start(false, "2028-01")) {
+            var owner = signedIn(app, "owner-a");
+            assertThat(owner.get(report).html().expectFirst(foodRow + " .plan").text()).isEqualTo("144 000 ₽");
+            Document januaryMonth = owner.get(january + "?edit=true").html();
+            assertThat(januaryMonth.select(".plan").eachText())
+                    .containsExactly("12 000 ₽", "1 001 ₽", "1 500 ₽", "21 499 ₽");
+            assertThat(januaryMonth.expectFirst("#plan-income").text()).isEqualTo("60 000 ₽");
+            assertThat(januaryMonth.expectFirst(foodRow + " .buffer").text()).isEqualTo("−2 000 ₽");
+            januaryRevision = januaryMonth.expectFirst("input[name=planRevision]").val();
+
+            var other = signedIn(app, "owner-b");
+            String otherFoodRow = "#row-" + categories.get("owner-b").getFirst().code();
+            assertThat(other.get(january).html().expectFirst(otherFoodRow + " .plan").text()).isEqualTo("12 000 ₽");
+            assertThat(other.get(report).html().expectFirst(otherFoodRow + " .plan").text()).isEqualTo("144 000 ₽");
+        }
+
+        try (var app = start(false, "2028-02")) {
+            var owner = signedIn(app, "owner-a");
+            Document reopened = owner.get(january + "?edit=true").html();
+            assertThat(reopened.select(".plan").eachText())
+                    .containsExactly("12 000 ₽", "1 001 ₽", "1 500 ₽", "21 499 ₽");
+            assertThat(reopened.expectFirst("input[name=planRevision]").val()).isEqualTo(januaryRevision);
+            Document savedDecember = owner.get(december).html();
+            assertThat(savedDecember.expectFirst(foodRow + " .plan").text()).isEqualTo("10 000 ₽");
+            assertThat(savedDecember.expectFirst(foodRow + " .actual").text()).isEqualTo("12 000 ₽");
+            assertThat(savedDecember.expectFirst("#actual-income").text()).isEqualTo("55 000 ₽");
+            assertThat(reopened.expectFirst(foodRow + " .buffer").text()).isEqualTo("−2 000 ₽");
+            assertThat(owner.get(february).html().expectFirst(foodRow + " .buffer").text()).isEqualTo("−2 000 ₽");
+
+            String transport = categories.get("owner-a").get(1).code();
+            assertThat(owner.saveHistory(owner.get("/history/2027-12").html(),
+                    Map.of("amount-" + food, "24000", "amount-" + transport, "0")).status()).isEqualTo(302);
+            assertThat(owner.get(february).html().select(".plan").eachText())
+                    .containsExactly("13 000 ₽", "0 ₽", "1 500 ₽", "21 500 ₽");
+            assertThat(owner.get(january).html().expectFirst(foodRow + " .plan").text()).isEqualTo("12 000 ₽");
+        }
+    }
+
+    @Test
+    void explicitlySavedZeroExpensesCountAtRolloverAndAfterHistorySave() throws Exception {
+        var draft = new PlanDraft("10000", "incomePercent", "40", List.of(
+                new PlanDraft.Row("", "Транспорт", "essential", "amount", "1000"),
+                new PlanDraft.Row("", "Здоровье", "essential", "amount", "1500"),
+                new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "100")));
+        String health;
+        try (var app = start(false, "2027-12")) {
+            var owner = signedIn(app, "owner-a");
+            assertThat(owner.plan(owner.get("/settings").html(), draft).status()).isEqualTo(204);
+            var rows = settingsDraft(owner.get("/settings").html()).rows();
+            String transport = rows.getFirst().code();
+            health = rows.get(1).code();
+            assertThat(owner.saveHistory(owner.get("/history/2027-01").html(),
+                    Map.of("amount-" + transport, "0", "plan-" + health, "1500")).status()).isEqualTo(302);
+        }
+
+        try (var app = start(false, "2028-01")) {
+            var owner = signedIn(app, "owner-a");
+            String january = "/months/2028-01";
+            assertThat(owner.get(january).html().select(".plan").eachText())
+                    .containsExactly("0 ₽", "1 500 ₽", "4 500 ₽");
+            assertThat(owner.saveHistory(owner.get("/history/2027-02").html(),
+                    Map.of("amount-" + health, "0")).status()).isEqualTo(302);
+            assertThat(owner.get(january).html().select(".plan").eachText())
+                    .containsExactly("0 ₽", "0 ₽", "6 000 ₽");
+        }
+    }
+
+    @Test
     void partialBackfillCommitsEachMonthAndRollsBackAnUnsuccessfulRecalculation() throws Exception {
         try (var app = start(false)) {
             var owner = signedIn(app, "owner-a");
