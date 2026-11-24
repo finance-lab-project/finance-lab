@@ -13,12 +13,13 @@
     <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
 </header>
 <div class="layout">
-    <aside aria-label="Раздел бюджета">
+    <aside aria-label="Разделы Finance Lab">
         <strong>Бюджет</strong>
         <span class="selected" aria-current="page">Месяц</span>
         <a class="nav-link" data-year-report th:href="@{/years/{y}(y=${period.year})}">Итоги</a>
         <a class="nav-link" th:href="@{/settings}">Настройки</a>
         <a class="nav-link" th:href="@{/history/{p}(p=${historyPeriod})}">Ввод истории</a>
+        <a class="nav-link" th:href="@{/investments}">Инвестиции</a>
     </aside>
     <main id="month">
         <div class="period-bar">

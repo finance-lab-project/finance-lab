@@ -27,7 +27,7 @@ button:disabled { opacity: .65; cursor: wait; }
 aside { padding: 2rem 1rem; background: #f0edf5; }
 aside strong, .selected { display: block; padding: .55rem 1.1rem; }
 .selected { margin-top: .35rem; background: #eaddff; color: #391e72; border-radius: 2rem; }
-#month, #history, #year-report { width: 100%; max-width: 82rem; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; margin-inline: auto; }
+#month, #history, #year-report, #investments { width: 100%; max-width: 82rem; padding: 1.8rem clamp(1rem, 3vw, 3rem) 3rem; margin-inline: auto; }
 .period-bar, .actions { display: flex; align-items: center; gap: .65rem; }
 .period-bar { justify-content: space-between; padding: .45rem 0 .9rem; }
 .period-picker { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .4rem; }
@@ -81,7 +81,7 @@ input[aria-invalid="true"] { border-color: var(--error); }
     #month th, #month td { padding-inline: .35rem; }
 }
 @media (max-width: 46rem) {
-    #month, #history, #year-report { padding: .6rem 1rem 2rem; }
+    #month, #history, #year-report, #investments { padding: .6rem 1rem 2rem; }
     .period-bar { position: sticky; top: 0; z-index: 1; flex-wrap: wrap; background: #faf9fc; border-bottom: 1px solid var(--line); }
     .actions { gap: .25rem; }
     .actions > * { padding-inline: .8rem; }
@@ -116,6 +116,10 @@ input[aria-invalid="true"] { border-color: var(--error); }
 .plan-row legend { padding: 0 .35rem; font-weight: 500; overflow-wrap: anywhere; }
 .plan-row select { width: 100%; min-height: 44px; font: inherit; color: inherit; background: white; border: 1px solid #79747e; border-radius: .35rem; }
 .plan-row .remove-row { margin-top: .5rem; }
+.investment-guidance { max-width: 68ch; }
+.investment-account .field-grid { margin: .65rem 0; }
+.investment-add { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; }
+.investment-add .setting-field { flex: 1 1 13rem; }
 #add-category { margin-top: .5rem; }
 .history-figures .plan-row { margin: .4rem 0; }
 .history-note { background: #f0edf5; }
