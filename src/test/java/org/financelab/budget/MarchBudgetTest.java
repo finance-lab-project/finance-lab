@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -89,6 +90,72 @@ class MarchBudgetTest {
         try (var restarted = start()) {
             assertMonth(signedIn(restarted, "owner-a").get(MARCH).html(), "25 000", "39 000", "−1 000");
             assertMonth(signedIn(restarted, "owner-b").get(MARCH).html(), "6 000", "20 000", "18 000");
+        }
+    }
+
+    @Test
+    void investmentMonthsKeepOwnerFiguresAndBudgetAcrossSessionsAndRestart() throws Exception {
+        String february = "/investments/2027-02";
+        String march = "/investments/2027-03";
+        try (var app = start()) {
+            assertThat(new Browser(app).get(february).status()).isEqualTo(302);
+            var desktop = signedIn(app, "owner-a");
+            var phone = signedIn(app, "owner-a");
+            assertThat(desktop.save(desktop.get(EDIT).html(), Map.of("income", "12345", "contributions", "4567"))
+                    .status()).isEqualTo(302);
+            assertThat(desktop.get(MARCH).html().expectFirst("aside a[href=/investments]").text())
+                    .isEqualTo("Инвестиции");
+            assertThat(desktop.get("/investments?year=2027&month=2").status()).isEqualTo(302);
+
+            for (String name : List.of("Учебный вклад", "Учебный брокерский счёт")) {
+                var addAccount = desktop.get(february).html().expectFirst("#add-investment-account");
+                assertThat(desktop.postForm(addAccount, Map.of("name", name)).status()).isEqualTo(302);
+            }
+            var accounts = desktop.get(february).html().select(".investment-account");
+            assertThat(accounts.select("legend").eachText()).containsExactly("Учебный вклад", "Учебный брокерский счёт");
+            assertInvestmentFigures(accounts.getFirst(), "", "");
+            assertThat(accounts.getFirst().text()).contains("Нет записи за этот месяц.");
+            var coupon = Map.of("closingValue", "101 500", "creditedIncome", "1500");
+            assertThat(desktop.postForm(accounts.getFirst(), coupon).status()).isEqualTo(302);
+            assertThat(desktop.postForm(accounts.getLast(), Map.of("closingValue", "40000", "creditedIncome", "0"))
+                    .status()).isEqualTo(302);
+
+            accounts = phone.get(february).html().select(".investment-account");
+            assertInvestmentFigures(accounts.getFirst(), "101 500", "1 500");
+            assertInvestmentFigures(accounts.getLast(), "40 000", "0");
+            assertThat(accounts.getLast().text()).doesNotContain("Нет записи за этот месяц.");
+            for (var unreported : phone.get(march).html().select(".investment-account")) {
+                assertInvestmentFigures(unreported, "", "");
+                assertThat(unreported.text()).contains("Нет записи за этот месяц.");
+            }
+
+            var correction = Map.of("closingValue", "102000", "creditedIncome", "1700");
+            assertThat(phone.postForm(accounts.getFirst(), correction).status()).isEqualTo(302);
+            assertThat(phone.postForm(accounts.getFirst(), correction).status()).isEqualTo(302);
+            var invalid = phone.postForm(accounts.getFirst(), Map.of("closingValue", "103000", "creditedIncome", ""));
+            assertThat(invalid.status()).isEqualTo(422);
+            assertThat(invalid.html().expectFirst("input[name=creditedIncome][aria-invalid=true]").val()).isEmpty();
+
+            var other = signedIn(app, "owner-b");
+            Document otherPage = other.get(february).html();
+            assertThat(otherPage.select(".investment-account")).isEmpty();
+            assertThat(other.post(accounts.getFirst().attr("action"),
+                    Map.of("closingValue", "1", "creditedIncome", "1", "_csrf", csrf(otherPage))).status())
+                    .isEqualTo(404);
+            assertInvestmentFigures(desktop.get(february).html().expectFirst(".investment-account"), "102 000", "1 700");
+            assertThat(app.getBean(JdbcClient.class).sql("SELECT count(*) FROM investment_month")
+                    .query(Long.class).single()).isEqualTo(2);
+        }
+        try (var restarted = start()) {
+            var owner = signedIn(restarted, "owner-a");
+            var accounts = owner.get(february).html().select(".investment-account");
+            assertInvestmentFigures(accounts.getFirst(), "102 000", "1 700");
+            assertInvestmentFigures(accounts.getLast(), "40 000", "0");
+            assertInvestmentFigures(owner.get(march).html().expectFirst(".investment-account"), "", "");
+            Document budget = owner.get(EDIT).html();
+            assertThat(budget.expectFirst("input[name=income]").val()).isEqualTo("12 345");
+            assertThat(budget.expectFirst("input[name=contributions]").val()).isEqualTo("4 567");
+            assertMonth(budget, "6 000", "20 000", "18 000");
         }
     }
 
@@ -721,6 +788,11 @@ class MarchBudgetTest {
         assertThat(html.expectFirst("#row-food .buffer").wholeText()).isEqualTo("−2 000 ₽");
     }
 
+    private static void assertInvestmentFigures(Element account, String closingValue, String creditedIncome) {
+        assertThat(account.expectFirst("input[name=closingValue]").val()).isEqualTo(closingValue);
+        assertThat(account.expectFirst("input[name=creditedIncome]").val()).isEqualTo(creditedIncome);
+    }
+
     private static String csrf(Document html) {
         return html.expectFirst("input[name=_csrf]").val();
     }
@@ -794,6 +866,12 @@ class MarchBudgetTest {
             return request(HttpRequest.newBuilder(base.resolve(path))
                     .header("Content-Type", "application/x-www-form-urlencoded")
                     .POST(HttpRequest.BodyPublishers.ofString(body)).build());
+        }
+
+        Page postForm(Element form, Map<String, String> fields) throws IOException, InterruptedException {
+            var data = new HashMap<>(fields);
+            data.put("_csrf", form.expectFirst("input[name=_csrf]").val());
+            return post(form.attr("action"), data);
         }
 
         private Page request(HttpRequest request) throws IOException, InterruptedException {

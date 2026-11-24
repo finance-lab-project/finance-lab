@@ -55,3 +55,18 @@ CREATE TABLE IF NOT EXISTS planning_category (
     UNIQUE (owner, since, addition_order),
     FOREIGN KEY (owner, since) REFERENCES planning_settings(owner, since)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS investment_account (
+    id INTEGER PRIMARY KEY,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    UNIQUE (owner, name)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS investment_month (
+    account_id INTEGER NOT NULL REFERENCES investment_account(id),
+    period TEXT NOT NULL,
+    closing_value INTEGER NOT NULL,
+    credited_income INTEGER NOT NULL,
+    PRIMARY KEY (account_id, period)
+) STRICT;

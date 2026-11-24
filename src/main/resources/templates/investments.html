@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Инвестиции · Finance Lab</title>
+    <link rel="stylesheet" th:href="@{/budget.css}">
+</head>
+<body>
+<header class="app-bar">
+    <span class="brand">Finance Lab</span>
+    <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
+</header>
+<div class="layout">
+    <aside aria-label="Разделы Finance Lab">
+        <strong>Бюджет</strong>
+        <a class="nav-link" th:href="@{/months/{p}(p=${period})}">Месяц</a>
+        <a class="nav-link" th:href="@{/years/{y}(y=${period.year})}">Итоги</a>
+        <a class="nav-link" th:href="@{/settings}">Настройки</a>
+        <a class="nav-link" th:href="@{/history}">Ввод истории</a>
+        <span class="selected" aria-current="page">Инвестиции</span>
+    </aside>
+    <main id="investments">
+        <h1>Инвестиции</h1>
+        <form id="period-picker" class="period-picker" th:action="@{/investments}" method="get">
+            <label>Месяц
+                <select name="month">
+                    <option th:each="name, i : ${months}" th:value="${i.count}" th:text="${name}"
+                            th:selected="${i.count == period.monthValue}"></option>
+                </select>
+            </label>
+            <label>Год <input name="year" type="number" min="1" max="9999" required th:value="${period.year}"></label>
+            <button type="submit" class="text-button">Перейти</button>
+        </form>
+        <section aria-label="Добавление счёта">
+            <p th:if="${accountAdded}" class="notice" role="status">Счёт добавлен.</p>
+            <form id="add-investment-account" th:action="@{/investments/{p}/accounts(p=${period})}" method="post">
+                <div class="investment-add">
+                    <label class="setting-field">Название счёта
+                        <input name="name" type="text" autocomplete="off" required th:value="${accountName}"
+                               th:attr="aria-invalid=${nameError != null},aria-describedby=${nameError != null ? 'investment-name-error' : null}">
+                    </label>
+                    <button class="secondary" type="submit">Добавить счёт</button>
+                </div>
+                <p th:if="${nameError != null}" id="investment-name-error" class="error" role="alert"
+                   th:text="${nameError}"></p>
+            </form>
+        </section>
+        <section aria-labelledby="investment-period">
+            <h2 id="investment-period" th:text="${title}"></h2>
+            <p th:unless="${accounts.isEmpty()}" id="investment-income-help" class="hint investment-guidance">
+                Сложите зачисленные за месяц проценты, купоны и дивиденды. Реинвестированный купон
+                включайте в доход один раз. Исключите личные переводы и изменение цен.
+                Стоимость счёта укажите как в отчёте, даже если купон уже учтён в ней.
+                Если зачислений не было, введите 0.
+            </p>
+            <form th:each="account : ${accounts}" class="investment-account" th:id="|account-${account.id()}|"
+                  th:action="@{/investments/{p}/accounts/{id}(p=${period},id=${account.id()})}" method="post"
+                  th:with="figures=${account.figures()}, editing=${draftAccount == account.id()},
+                           valueError=${editing ? errors.get('closingValue') : null},
+                           incomeError=${editing ? errors.get('creditedIncome') : null}">
+                <fieldset class="plan-row">
+                    <legend th:text="${account.name()}"></legend>
+                    <p th:if="${figures == null}" class="hint">Нет записи за этот месяц.</p>
+                    <p th:if="${savedAccount == account.id()}" class="notice" role="status">Данные сохранены.</p>
+                    <div class="field-grid">
+                        <label>Стоимость на конец месяца, ₽
+                            <input type="text" inputmode="decimal" autocomplete="off" name="closingValue" required
+                                   th:value="${editing ? draft.get('closingValue') : (figures == null ? '' : @rubles.number(figures.closingValue()))}"
+                                   th:attr="aria-invalid=${valueError != null},aria-describedby=${valueError != null ? 'value-error-' + account.id() : null}">
+                            <small th:if="${valueError != null}" th:id="|value-error-${account.id()}|"
+                                   class="error" role="alert" th:text="${valueError}"></small>
+                        </label>
+                        <label>Зачисленный доход, ₽
+                            <input type="text" inputmode="decimal" autocomplete="off" name="creditedIncome" required
+                                   th:value="${editing ? draft.get('creditedIncome') : (figures == null ? '' : @rubles.number(figures.creditedIncome()))}"
+                                   th:attr="aria-invalid=${incomeError != null},aria-describedby=${incomeError != null ? 'income-error-' + account.id() : 'investment-income-help'}">
+                            <small th:if="${incomeError != null}" th:id="|income-error-${account.id()}|"
+                                   class="error" role="alert" th:text="${incomeError}"></small>
+                        </label>
+                    </div>
+                    <button class="primary" type="submit">Сохранить</button>
+                </fieldset>
+            </form>
+            <p th:if="${accounts.isEmpty()}" class="hint">Добавьте счёт, чтобы записать его стоимость и зачисленный доход.</p>
+        </section>
+    </main>
+</div>
+</body>
+</html>
