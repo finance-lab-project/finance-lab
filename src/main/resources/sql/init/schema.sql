@@ -70,3 +70,14 @@ CREATE TABLE IF NOT EXISTS investment_month (
     credited_income INTEGER NOT NULL,
     PRIMARY KEY (account_id, period)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS fire_goal (
+    owner TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('capital', 'income')),
+    amount INTEGER NOT NULL CHECK (amount > 0),
+    PRIMARY KEY (owner, kind)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS fire_account (
+    account_id INTEGER PRIMARY KEY REFERENCES investment_account(id)
+) STRICT;
