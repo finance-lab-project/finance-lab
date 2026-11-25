@@ -16,7 +16,7 @@ from subscription import Waiting, agent, preflight
 
 REPO = "finance-lab-project/finance-lab"
 OWNER = "anton415"
-REVIEWER = "finance-lab-sprint-reviewer[bot]"
+REVIEWER = "github-actions[bot]"
 BASE = "main"
 ROOT = Path.home() / "Library/Application Support/FinanceLabSprint"
 PROTECTED = {".git", ".github", ".codex", ".agents", ".mvn", ".gitmodules", ".gitattributes",
@@ -84,6 +84,9 @@ def save(path, state):
 
 
 def protected():
+    workflow = api(endpoint("actions/permissions/workflow"))
+    if workflow.get("can_approve_pull_request_reviews") is not True:
+        raise Waiting("Enable ‘Allow GitHub Actions to create and approve pull requests’ for Finance Lab")
     settings = api("repos/" + REPO)
     rules = api(endpoint("branches/main/protection"))
     reviews = rules.get("required_pull_request_reviews") or {}
@@ -146,10 +149,14 @@ def ci(sha):
     return ("failed", failed[0]["html_url"]) if failed else ("passed", verify[0]["html_url"])
 
 
+def review_body(summary):
+    return summary.replace("\r\n", "\n")[:3500]
+
+
 def record(pr, sha, decision, summary):
     gh("workflow", "run", "record-agent-review.yml", "-R", REPO, "--ref", BASE,
        "-f", f"pr={pr}", "-f", f"sha={sha}", "-f", f"decision={decision}",
-       "-f", "summary=" + summary[:3500])
+       "-f", "summary=" + review_body(summary))
 
 
 def advance(issue, state, persist):
@@ -188,7 +195,8 @@ def advance(issue, state, persist):
                            if r["commit_id"] == sha and r["user"]["login"] == REVIEWER
                            and r["state"] in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}), None)
             expected = "APPROVED" if cached["decision"] == "approve" else "CHANGES_REQUESTED"
-            if not latest or latest["state"] != expected:
+            if (not latest or latest["state"] != expected
+                    or (latest.get("body") or "").replace("\r\n", "\n") != review_body(cached["summary"])):
                 now = dt.datetime.now().timestamp()
                 if now - cached.get("sent", 0) >= 300:
                     record(pr["number"], sha, "APPROVE" if cached["decision"] == "approve" else "REQUEST_CHANGES",

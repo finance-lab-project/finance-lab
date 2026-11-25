@@ -1,5 +1,6 @@
 """Install the personal Mac worker from a trusted Finance Lab checkout."""
 import argparse
+import base64
 import json
 import os
 import plistlib
@@ -40,7 +41,6 @@ def configure():
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--configure-github", action="store_true")
-    p.add_argument("--reviewer-key", type=Path, help="Downloaded private key of the repository reviewer App")
     p.add_argument("--auto-reload-is-off", action="store_true",
                    help="Confirm the ChatGPT account's automatic credit reload is off.")
     args = p.parse_args()
@@ -48,22 +48,12 @@ def main():
         sys.exit("Confirm automatic credit reload is off in ChatGPT Settings > Usage, then pass --auto-reload-is-off.")
     source = Path(__file__).resolve().parent
     workflow = api(endpoint("contents/.github/workflows/record-agent-review.yml?ref=main"))
-    if workflow.get("type") != "file":
-        sys.exit("Merge the setup pull request first.")
+    local_workflow = source.parents[1] / ".github/workflows/record-agent-review.yml"
+    if (workflow.get("encoding") != "base64"
+            or base64.b64decode(workflow["content"]) != local_workflow.read_bytes()):
+        sys.exit("Install from a merged checkout matching the sprint review workflow on main.")
     if api("user")["login"] != OWNER:
         sys.exit("The GitHub CLI must be signed in as " + OWNER + ".")
-    secrets = api(endpoint("actions/secrets?per_page=100"))
-    configured = any(item["name"] == "SPRINT_REVIEWER_PRIVATE_KEY" for item in secrets["secrets"])
-    key_path = args.reviewer_key
-    if not configured and key_path is None:
-        downloads = sorted((Path.home() / "Downloads").glob("finance-lab-sprint-reviewer*.pem"))
-        if len(downloads) != 1:
-            sys.exit("Download the reviewer key or specify its exact path with --reviewer-key.")
-        key_path = downloads[0]
-    if key_path is not None:
-        with key_path.open("rb") as key:
-            subprocess.run(["gh", "secret", "set", "SPRINT_REVIEWER_PRIVATE_KEY", "-R", REPO],
-                           stdin=key, check=True)
     if args.configure_github:
         configure()
     else:
