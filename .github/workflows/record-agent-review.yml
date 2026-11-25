@@ -1,0 +1,55 @@
+name: Record sprint review
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: string
+      sha:
+        description: Reviewed commit
+        required: true
+        type: string
+      decision:
+        description: Independent review decision
+        required: true
+        type: choice
+        options:
+          - REQUEST_CHANGES
+          - APPROVE
+      summary:
+        description: Findings or evidence for approval
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  record:
+    if: github.repository == 'finance-lab-project/finance-lab' && github.ref == 'refs/heads/main' && github.actor == 'anton415' && github.triggering_actor == 'anton415'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Record decision on the reviewed revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          HEAD_SHA: ${{ inputs.sha }}
+          DECISION: ${{ inputs.decision }}
+          SUMMARY: ${{ inputs.summary }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR" =~ ^[1-9][0-9]*$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$DECISION" = APPROVE || "$DECISION" = REQUEST_CHANGES ]]
+          endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR"
+          gh api "$endpoint" | jq -e --arg sha "$HEAD_SHA" --arg repo "$GITHUB_REPOSITORY" '
+            .state == "open" and .draft == false and .user.login == "anton415"
+            and .head.repo.full_name == $repo and .base.ref == "main"
+            and (.head.ref | test("^sprint/issue-[1-9][0-9]*$"))
+            and .head.sha == $sha
+          ' >/dev/null
+          gh api "$endpoint/reviews" -X POST -f commit_id="$HEAD_SHA" \
+            -f event="$DECISION" -f body="$SUMMARY" --silent
