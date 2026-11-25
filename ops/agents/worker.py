@@ -276,8 +276,9 @@ def tick():
     pages = json.loads(gh("api", "--paginate", "--slurp", endpoint(f"issues?state=open&creator={OWNER}&per_page=100")))
     today = dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).date()
     items = sorted((i for page in pages for i in page if eligible(i, today)), key=lambda i: i["number"])
-    # Resume the active PR before picking up a newly unblocked, older issue.
-    items.sort(key=lambda i: not (ROOT / f"{i['number']}.json").exists())
+    active = ROOT / "active.json"
+    current = json.loads(active.read_text()) if active.exists() else None
+    items.sort(key=lambda i: i["number"] != current)
     for issue in items:
         state_path = ROOT / f"{issue['number']}.json"
         state = json.loads(state_path.read_text()) if state_path.exists() else {}
@@ -294,12 +295,15 @@ def tick():
             protected()
             if api("user")["login"] != OWNER:
                 raise Waiting("The Mac GitHub identity must be " + OWNER)
+            save(active, issue["number"])
             advance(issue, state, lambda: save(state_path, state))
         except Blocked as exc:
             message = f"Sprint work blocked. {str(exc)[:1200]}\n\nEdit the issue to retry."
             gh("issue", "comment", str(issue["number"]), "-R", REPO, "--body", message)
             state["blocked"] = digest
             save(state_path, state)
+            if active.exists() and json.loads(active.read_text()) == issue["number"]:
+                active.unlink()
             continue
         return
 
