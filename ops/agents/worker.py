@@ -16,6 +16,7 @@ from subscription import Waiting, agent, preflight
 
 REPO = "finance-lab-project/finance-lab"
 OWNER = "anton415"
+REVIEWER = "finance-lab-sprint-reviewer[bot]"
 BASE = "main"
 ROOT = Path.home() / "Library/Application Support/FinanceLabSprint"
 PROTECTED = {".git", ".github", ".codex", ".agents", ".mvn", ".gitmodules", ".gitattributes",
@@ -87,9 +88,6 @@ def protected():
     rules = api(endpoint("branches/main/protection"))
     reviews = rules.get("required_pull_request_reviews") or {}
     checks = rules.get("required_status_checks") or {}
-    perms = api(endpoint("actions/permissions/workflow"))
-    if not perms.get("can_approve_pull_request_reviews"):
-        raise Waiting("Enable repository Actions approval for the separate review identity")
     if not (settings.get("allow_auto_merge") and settings.get("allow_squash_merge")
             and reviews.get("required_approving_review_count", 0) >= 1
             and reviews.get("dismiss_stale_reviews") and rules.get("enforce_admins", {}).get("enabled")
@@ -187,7 +185,7 @@ def advance(issue, state, persist):
             cached = state["review"]
             reviews = json.loads(gh("api", "--paginate", "--slurp", endpoint(f"pulls/{pr['number']}/reviews?per_page=100")))
             latest = next((r for page in reversed(reviews) for r in reversed(page)
-                           if r["commit_id"] == sha and r["user"]["login"] == "github-actions[bot]"
+                           if r["commit_id"] == sha and r["user"]["login"] == REVIEWER
                            and r["state"] in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}), None)
             expected = "APPROVED" if cached["decision"] == "approve" else "CHANGES_REQUESTED"
             if not latest or latest["state"] != expected:
