@@ -236,6 +236,22 @@ class MarchBudgetTest {
             assertThat(may.expectFirst("#portfolio-value").text()).isEqualTo("0 ₽");
             assertThat(may.expectFirst("#value-change").text()).isEqualTo("Нет данных для сравнения");
             assertThat(may.expectFirst("#budget-contributions").text()).isEqualTo("Нет записи в бюджете");
+
+            String april = "/investments/2027-04";
+            mvc.perform(post(first.replace(february, april)).principal(() -> "owner-a")
+                            .param("closingValue", "100000").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            Document partialPrior = reviewPage(mvc, "/investments/2027-05");
+            assertThat(partialPrior.expectFirst("#portfolio-value").text()).isEqualTo("0 ₽");
+            assertThat(partialPrior.expectFirst("#previous-value").text()).isEqualTo("Нет полной оценки");
+            assertThat(partialPrior.expectFirst("#value-change").text()).isEqualTo("Нет данных для сравнения");
+
+            mvc.perform(post(second.replace(february, april)).principal(() -> "owner-a")
+                            .param("closingValue", "0").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            Document completePrior = reviewPage(mvc, "/investments/2027-05");
+            assertThat(completePrior.expectFirst("#previous-value").text()).isEqualTo("100 000 ₽");
+            assertThat(completePrior.expectFirst("#value-change").text()).isEqualTo("−100 000 ₽");
         }
     }
 
