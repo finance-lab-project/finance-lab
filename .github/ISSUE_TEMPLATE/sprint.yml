@@ -27,4 +27,4 @@ body:
     id: dependencies
     attributes:
       label: Dependencies
-      description: List prerequisite issue numbers, such as "#38, #39". Leave blank if there are none.
+      description: 'List prerequisite issues as #38, #39. Leave blank if there are none.'
