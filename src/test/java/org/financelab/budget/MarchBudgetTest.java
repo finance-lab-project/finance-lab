@@ -870,7 +870,7 @@ class MarchBudgetTest {
                 "--spring.main.banner-mode=off", "--logging.level.root=WARN");
     }
 
-    private static Browser signedIn(ConfigurableApplicationContext app, String name) throws Exception {
+    static Browser signedIn(ConfigurableApplicationContext app, String name) throws Exception {
         var browser = new Browser(app);
         browser.login(name, "fixture-" + name);
         return browser;
@@ -910,9 +910,9 @@ class MarchBudgetTest {
         return fields;
     }
 
-    private record Page(int status, Document html) { }
+    record Page(int status, Document html) { }
 
-    private static class Browser {
+    static class Browser {
         private final URI base;
         private final HttpClient http = HttpClient.newBuilder()
                 .cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
