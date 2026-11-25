@@ -186,10 +186,11 @@ def advance(issue, state, persist):
         elif state.get("review", {}).get("sha") == sha:
             cached = state["review"]
             reviews = json.loads(gh("api", "--paginate", "--slurp", endpoint(f"pulls/{pr['number']}/reviews?per_page=100")))
-            posted = next((r for page in reversed(reviews) for r in reversed(page)
+            latest = next((r for page in reversed(reviews) for r in reversed(page)
                            if r["commit_id"] == sha and r["user"]["login"] == "github-actions[bot]"
-                           and r["state"] == ("APPROVED" if cached["decision"] == "approve" else "CHANGES_REQUESTED")), None)
-            if not posted:
+                           and r["state"] in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}), None)
+            expected = "APPROVED" if cached["decision"] == "approve" else "CHANGES_REQUESTED"
+            if not latest or latest["state"] != expected:
                 now = dt.datetime.now().timestamp()
                 if now - cached.get("sent", 0) >= 300:
                     record(pr["number"], sha, "APPROVE" if cached["decision"] == "approve" else "REQUEST_CHANGES",
@@ -208,7 +209,7 @@ def advance(issue, state, persist):
                 return
             feedback = cached["summary"]
 
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory(dir=ROOT) as d:
         checkout, work = Path(d, "checkout"), Path(d, "work")
         gh("repo", "clone", REPO, str(checkout), "--", "--no-checkout", "--quiet")
         remote = git(checkout, "branch", "-r", "--list", "origin/" + branch)
