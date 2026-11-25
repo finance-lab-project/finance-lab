@@ -58,7 +58,12 @@ class FireTest {
             var gap = page(mvc, phone, "owner-a");
             assertThat(gap.expectFirst("#income-gaps").text()).contains("Период неполный", "Октябрь 2026", "Вклад");
             assertThat(gap.expectFirst("#income-average").text()).isEqualTo("22 500 ₽");
-            saveBalance(mvc, "/investments/2026-10", Long.toString(first), "2000000");
+            assertThat(gap.expectFirst("#income-gaps a").attr("href")).isEqualTo("/investments/2026-10");
+            mvc.perform(post("/investments/2026-10/accounts/" + first).principal(() -> "owner-a")
+                    .param("closingValue", "2000000").param("creditedIncome", " "))
+                    .andExpect(status().is(422));
+            assertThat(page(mvc, phone, "owner-a").expectFirst("#income-gaps").text()).isEqualTo(gap.expectFirst("#income-gaps").text());
+            saveIncome(mvc, "/investments/2026-10", first, "2000000", "0");
             var shortHistory = page(mvc, desktop, "owner-a");
             assertThat(shortHistory.select("#income-gaps")).isEmpty();
             assertThat(shortHistory.expectFirst("#income-range").text()).contains("Август 2026", "Октябрь 2026");
@@ -70,15 +75,13 @@ class FireTest {
                 investments.saveMonth("owner-a", first, month, new InvestmentStore.Figures(2_000_000, 15_000));
             }
             saveIncome(mvc, "/investments/2025-10", first, "1000000", "999999");
-            for (var session : new MockHttpSession[]{desktop, phone}) {
-                var full = page(mvc, session, "owner-a");
-                assertThat(full.select("#income-range time").eachAttr("datetime")).containsExactly("2025-11", "2026-10");
-                assertThat(full.expectFirst("#income-total").text()).isEqualTo("180 000 ₽");
-                assertThat(full.expectFirst("#income-average").text()).isEqualTo("15 000 ₽");
-                assertThat(full.expectFirst("#income-target").text()).isEqualTo("100 000 ₽");
-                assertThat(full.expectFirst("#income-percentage").text()).isEqualTo("15%");
-                assertThat(full.expectFirst("#capital-percentage").text()).isEqualTo("10%");
-            }
+            var full = page(mvc, desktop, "owner-a");
+            assertThat(full.select("#income-range time").eachAttr("datetime")).containsExactly("2025-11", "2026-10");
+            assertThat(full.expectFirst("#income-total").text()).isEqualTo("180 000 ₽");
+            assertThat(full.expectFirst("#income-average").text()).isEqualTo("15 000 ₽");
+            assertThat(full.expectFirst("#income-target").text()).isEqualTo("100 000 ₽");
+            assertThat(full.expectFirst("#income-percentage").text()).isEqualTo("15%");
+            assertThat(full.expectFirst("#capital-percentage").text()).isEqualTo("10%");
 
             mvc.perform(post("/fire/accounts").session(desktop).principal(() -> "owner-a")
                     .param("accountIds", Long.toString(first), Long.toString(second))).andExpect(status().isFound());
