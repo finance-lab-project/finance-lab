@@ -66,15 +66,18 @@ class SprintTests(unittest.TestCase):
     def test_only_matching_bot_approval_can_merge(self):
         pr = pr_case()
         sha = pr["head"]["sha"]
-        for review_sha, actor, decision, merge in [
-            (sha, worker.REVIEWER, "APPROVED", True),
-            ("b" * 40, worker.REVIEWER, "APPROVED", False),
-            (sha, worker.OWNER, "APPROVED", False),
-            (sha, worker.REVIEWER, "CHANGES_REQUESTED", False),
+        summary = "Tests match the issue"
+        for review_sha, actor, decision, body, merge in [
+            (sha, "github-actions[bot]", "APPROVED", summary, True),
+            ("b" * 40, worker.REVIEWER, "APPROVED", summary, False),
+            (sha, worker.OWNER, "APPROVED", summary, False),
+            (sha, "finance-lab-sprint-reviewer[bot]", "APPROVED", summary, False),
+            (sha, worker.REVIEWER, "APPROVED", "Another review", False),
+            (sha, worker.REVIEWER, "CHANGES_REQUESTED", summary, False),
         ]:
-            with self.subTest(actor=actor, sha=review_sha, decision=decision):
-                state = {"review": {"sha": sha, "decision": "approve", "summary": "Tests match the issue"}}
-                review = [{"commit_id": review_sha, "user": {"login": actor}, "state": decision}]
+            with self.subTest(actor=actor, sha=review_sha, decision=decision, body=body):
+                state = {"review": {"sha": sha, "decision": "approve", "summary": summary}}
+                review = [{"commit_id": review_sha, "user": {"login": actor}, "state": decision, "body": body}]
                 with patch.object(worker, "api", side_effect=[[pr], {"behind_by": 0}]), \
                         patch.object(worker, "ci", return_value=("passed", "")), \
                         patch.object(worker, "gh", return_value=json.dumps([review])) as gh, \
@@ -85,6 +88,13 @@ class SprintTests(unittest.TestCase):
                     if merge:
                         self.assertEqual(commands[-1][-2:], ("--match-head-commit", sha))
                         record.assert_not_called()
+
+    def test_actions_approval_permission_is_required(self):
+        for policy in ({}, {"can_approve_pull_request_reviews": False}):
+            with self.subTest(policy=policy), patch.object(worker, "api", return_value=policy) as api:
+                with self.assertRaisesRegex(worker.Waiting, "Allow GitHub Actions"):
+                    worker.protected()
+                api.assert_called_once_with(worker.endpoint("actions/permissions/workflow"))
 
     def test_pending_ci_does_not_approve(self):
         with patch.object(worker, "api", side_effect=[[pr_case()], {"behind_by": 0}]), \

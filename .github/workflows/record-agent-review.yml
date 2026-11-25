@@ -30,18 +30,12 @@ jobs:
     if: github.repository == 'finance-lab-project/finance-lab' && github.ref == 'refs/heads/main' && github.actor == 'anton415' && github.triggering_actor == 'anton415'
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    permissions:
+      pull-requests: write
     steps:
-      - name: Mint a token for the repository reviewer
-        id: reviewer
-        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
-        with:
-          client-id: Iv23liWHaTbKR7lmMaZO # Public client ID of finance-lab-sprint-reviewer
-          private-key: ${{ secrets.SPRINT_REVIEWER_PRIVATE_KEY }}
-          permission-pull-requests: write
       - name: Record decision on the reviewed revision
         env:
-          GH_TOKEN: ${{ steps.reviewer.outputs.token }}
-          APP_SLUG: ${{ steps.reviewer.outputs.app-slug }}
+          GH_TOKEN: ${{ github.token }}
           PR: ${{ inputs.pr }}
           HEAD_SHA: ${{ inputs.sha }}
           DECISION: ${{ inputs.decision }}
@@ -49,7 +43,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$APP_SLUG" == finance-lab-sprint-reviewer ]]
           [[ "$PR" =~ ^[1-9][0-9]*$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$DECISION" = APPROVE || "$DECISION" = REQUEST_CHANGES ]]
           endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR"
