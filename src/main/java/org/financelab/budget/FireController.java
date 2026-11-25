@@ -5,8 +5,13 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.security.Principal;
+import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.financelab.budget.FireStore.Account;
+import org.financelab.budget.FireStore.AccountIncome;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -20,6 +25,8 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @Controller
 @RequestMapping("/fire")
 class FireController {
+    record IncomeGap(YearMonth month, String title, List<String> accounts) {}
+
     private final FireStore store;
     private final BudgetPeriod period;
 
@@ -38,7 +45,9 @@ class FireController {
 
         model.addAttribute("period", period.current());
         model.addAttribute("capitalGoal", capitalGoal);
-        model.addAttribute("incomeGoal", store.goal(owner, "income"));
+        Long incomeGoal = store.goal(owner, "income");
+        model.addAttribute("incomeGoal", incomeGoal);
+        addIncomeProgress(owner, incomeGoal, model);
         model.addAttribute("accounts", accounts);
         model.addAttribute("emptySelection", selected.isEmpty());
         model.addAttribute("missingAccounts", missing);
@@ -53,11 +62,62 @@ class FireController {
             if (capitalGoal != null) {
                 BigDecimal percentage = new BigDecimal(capital).movePointRight(2)
                         .divide(BigDecimal.valueOf(capitalGoal), 2, RoundingMode.HALF_UP);
-                model.addAttribute("percentage", percentage.stripTrailingZeros().toPlainString().replace('.', ','));
+                model.addAttribute("percentage", displayPercentage(percentage));
                 model.addAttribute("remaining", BigInteger.valueOf(capitalGoal).subtract(capital).max(BigInteger.ZERO));
             }
         }
         return "fire";
+    }
+
+    private void addIncomeProgress(String owner, Long goal, Model model) {
+        YearMonth last = period.currentInMoscow().minusMonths(1);
+        var history = store.incomeHistory(owner, last);
+        if (history.isEmpty()) return;
+
+        var months = history.stream().collect(Collectors.groupingBy(
+                AccountIncome::month, LinkedHashMap::new, Collectors.toList()));
+        var gaps = new ArrayList<IncomeGap>();
+        BigInteger credited = BigInteger.ZERO;
+        BigInteger completeTotal = BigInteger.ZERO;
+        boolean hasPayoutData = false;
+        int completeMonths = 0;
+        for (var month : months.entrySet()) {
+            var missing = month.getValue().stream()
+                    .filter(account -> account.credited() == null).map(AccountIncome::name).toList();
+            BigInteger total = month.getValue().stream().map(AccountIncome::credited)
+                    .filter(amount -> amount != null).map(BigInteger::valueOf).reduce(BigInteger.ZERO, BigInteger::add);
+            credited = credited.add(total);
+            hasPayoutData |= missing.size() < month.getValue().size();
+            if (missing.isEmpty()) {
+                completeTotal = completeTotal.add(total);
+                completeMonths++;
+            } else {
+                gaps.add(new IncomeGap(month.getKey(), BudgetPeriod.title(month.getKey()), missing));
+            }
+        }
+
+        model.addAttribute("incomeFirst", history.getFirst().month());
+        model.addAttribute("incomeLast", last);
+        model.addAttribute("incomeFirstTitle", BudgetPeriod.title(history.getFirst().month()));
+        model.addAttribute("incomeLastTitle", BudgetPeriod.title(last));
+        if (hasPayoutData) model.addAttribute("incomeTotal", credited);
+        model.addAttribute("incomeGaps", gaps);
+        if (completeMonths == 0) return;
+
+        BigDecimal total = new BigDecimal(completeTotal);
+        BigDecimal count = BigDecimal.valueOf(completeMonths);
+        model.addAttribute("incomeDuration", "за " + completeMonths
+                + (completeMonths == 1 ? " месяц" : completeMonths <= 4 ? " месяца" : " месяцев"));
+        model.addAttribute("incomeAverage", total.divide(count, 0, RoundingMode.HALF_UP));
+        if (goal != null) {
+            BigDecimal percentage = total.movePointRight(2)
+                    .divide(count.multiply(BigDecimal.valueOf(goal)), 2, RoundingMode.HALF_UP);
+            model.addAttribute("incomePercentage", displayPercentage(percentage));
+        }
+    }
+
+    private static String displayPercentage(BigDecimal percentage) {
+        return percentage.stripTrailingZeros().toPlainString().replace('.', ',');
     }
 
     @PostMapping("/goals/{kind:capital|income}")
