@@ -19,3 +19,5 @@ jobs:
           distribution: temurin
           java-version: '25'
       - run: mvn --batch-mode --no-transfer-progress verify
+      - name: Test sprint worker safeguards
+        run: python3 -m unittest discover -s ops/agents -v
