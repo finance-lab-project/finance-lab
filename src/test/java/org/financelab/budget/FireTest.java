@@ -2,6 +2,7 @@ package org.financelab.budget;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Map;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.support.GenericWebApplicationContext;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.financelab.budget.MarchBudgetTest.signedIn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -60,13 +62,16 @@ class FireTest {
             assertThat(missing.expectFirst("#observation-month time").attr("datetime")).isEqualTo("2027-03");
             assertThat(missing.select("#capital-percentage")).isEmpty();
 
+            saveBalance(mvc, march, second, "2000000");
+            var withoutTarget = page(mvc, phone, "owner-a");
+            assertThat(withoutTarget.expectFirst("#fire-capital").text()).isEqualTo("3 000 000 ₽");
+            assertThat(withoutTarget.expectFirst("#capital-target").text()).isEqualTo("Цель не задана");
+            assertThat(withoutTarget.select("#fire-missing-balances, #capital-percentage")).isEmpty();
+
             mvc.perform(post("/fire/goals/capital").session(desktop).principal(() -> "owner-a")
                     .param("amount", "30 000 000")).andExpect(status().isFound());
             mvc.perform(post("/fire/goals/income").session(phone).principal(() -> "owner-a")
                     .param("amount", "100 000")).andExpect(status().isFound());
-            assertThat(page(mvc, phone, "owner-a").select("#capital-percentage")).isEmpty();
-
-            saveBalance(mvc, march, second, "2000000");
             var progress = page(mvc, phone, "owner-a");
             assertThat(progress.expectFirst("#fire-capital").text()).isEqualTo("3 000 000 ₽");
             assertThat(progress.expectFirst("#capital-target").text()).isEqualTo("30 000 000 ₽");
@@ -98,9 +103,12 @@ class FireTest {
             assertThat(page(mvc, phone, "owner-b").select("input[name=accountIds][checked]")).isEmpty();
 
             saveBalance(mvc, "/investments/2027-04", first, "1000000");
-            saveBalance(mvc, "/investments/2027-04", second, "2000000");
             mvc.perform(post("/fire/accounts").session(desktop).principal(() -> "owner-a")
                     .param("accountIds", first, second, excluded)).andExpect(status().isFound());
+            var missingWithTarget = page(mvc, phone, "owner-a");
+            assertThat(missingWithTarget.expectFirst("#fire-missing-balances").text()).contains("Брокерский счёт");
+            assertThat(missingWithTarget.select("#capital-percentage")).isEmpty();
+            saveBalance(mvc, "/investments/2027-04", second, "2000000");
             assertThat(page(mvc, phone, "owner-a").expectFirst("#fire-capital").text()).isEqualTo("3 500 000 ₽");
 
             mvc.perform(post("/fire/accounts").session(desktop).principal(() -> "owner-a"))
@@ -108,6 +116,43 @@ class FireTest {
             var empty = page(mvc, phone, "owner-a");
             assertThat(empty.select("#fire-empty-selection")).hasSize(1);
             assertThat(empty.select("#capital-percentage")).isEmpty();
+        }
+    }
+
+    @Test
+    void authenticatedClientsShareSettingsAndIncomeEditsPreserveCapital() throws Exception {
+        try (var app = new SpringApplicationBuilder(FinanceLabApplication.class).profiles("fixture")
+                .run("--server.port=0", "--server.address=127.0.0.1",
+                        "--spring.datasource.url=jdbc:sqlite:" + directory.resolve("fire-browser.sqlite"),
+                        "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
+                        "--spring.main.banner-mode=off", "--logging.level.root=WARN")) {
+            assertThat(app.getBean(InvestmentStore.class).addAccount("owner-a", "Вклад")).isTrue();
+            var desktop = signedIn(app, "owner-a");
+            var phone = signedIn(app, "owner-a");
+            var initial = desktop.get("/fire");
+            assertThat(initial.status()).isEqualTo(200);
+            var accounts = initial.html().expectFirst("#fire-accounts-form");
+            String accountId = accounts.expectFirst("input[name=accountIds]").val();
+            assertThat(desktop.postForm(accounts, Map.of("accountIds", accountId)).status()).isEqualTo(302);
+            assertThat(desktop.postForm(initial.html().expectFirst("#capital-goal-form"),
+                    Map.of("amount", "30000000")).status()).isEqualTo(302);
+            assertThat(desktop.postForm(initial.html().expectFirst("#income-goal-form"),
+                    Map.of("amount", "100000")).status()).isEqualTo(302);
+
+            var reopened = phone.get("/fire");
+            assertThat(reopened.status()).isEqualTo(200);
+            assertThat(reopened.html().select("input[name=accountIds][checked]").eachAttr("value"))
+                    .containsExactly(accountId);
+            assertThat(reopened.html().expectFirst("#capital-target").text()).isEqualTo("30 000 000 ₽");
+            var incomeForm = reopened.html().expectFirst("#income-goal-form");
+            assertThat(incomeForm.expectFirst("input[name=amount]").val()).isEqualTo("100\u00a0000");
+            assertThat(phone.postForm(incomeForm, Map.of("amount", "125000")).status()).isEqualTo(302);
+
+            var updated = desktop.get("/fire");
+            assertThat(updated.status()).isEqualTo(200);
+            assertThat(updated.html().expectFirst("#income-goal-form input[name=amount]").val())
+                    .isEqualTo("125\u00a0000");
+            assertThat(updated.html().expectFirst("#capital-target").text()).isEqualTo("30 000 000 ₽");
         }
     }
 
