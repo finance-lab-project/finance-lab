@@ -9,7 +9,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 class InvestmentStore {
     record Figures(long closingValue, long creditedIncome) {}
-    record AccountMonth(long id, String name, @Nullable Figures figures) {}
+    record AccountMonth(long id, String name, @Nullable Figures figures, @Nullable Long previousValue) {}
 
     private final JdbcClient jdbc;
 
@@ -19,15 +19,18 @@ class InvestmentStore {
 
     List<AccountMonth> read(String owner, YearMonth month) {
         return jdbc.sql("""
-                SELECT a.id, a.name, m.period, m.closing_value, m.credited_income
+                SELECT a.id, a.name, m.period, m.closing_value, m.credited_income,
+                       prior.closing_value AS previous_value
                   FROM investment_account a
                   LEFT JOIN investment_month m ON m.account_id = a.id AND m.period = ?
+                  LEFT JOIN investment_month prior ON prior.account_id = a.id AND prior.period = ?
                  WHERE a.owner = ?
                  ORDER BY a.id
-                """).params(month.toString(), owner)
+                """).params(month.toString(), month.minusMonths(1).toString(), owner)
                 .query((rs, index) -> new AccountMonth(rs.getLong("id"), rs.getString("name"),
                         rs.getString("period") == null ? null
-                                : new Figures(rs.getLong("closing_value"), rs.getLong("credited_income"))))
+                                : new Figures(rs.getLong("closing_value"), rs.getLong("credited_income")),
+                        rs.getObject("previous_value") == null ? null : rs.getLong("previous_value")))
                 .list();
     }
 

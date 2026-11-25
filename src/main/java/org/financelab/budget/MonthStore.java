@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -124,10 +125,14 @@ class MonthStore {
     }
 
     private MonthBudget.Figures figures(String owner, YearMonth month) {
+        return savedFigures(owner, month).orElse(new MonthBudget.Figures(0, 0, 0));
+    }
+
+    Optional<MonthBudget.Figures> savedFigures(String owner, YearMonth month) {
         return jdbc.sql("SELECT income, contributions, revision FROM month_actuals WHERE owner = ? AND period = ?")
                 .params(owner, month.toString())
                 .query((rs, i) -> new MonthBudget.Figures(rs.getLong(1), rs.getLong(2), rs.getLong(3)))
-                .optional().orElse(new MonthBudget.Figures(0, 0, 0));
+                .optional();
     }
 
     @Transactional
