@@ -67,10 +67,10 @@ class SprintTests(unittest.TestCase):
         pr = pr_case()
         sha = pr["head"]["sha"]
         for review_sha, actor, decision, merge in [
-            (sha, "github-actions[bot]", "APPROVED", True),
-            ("b" * 40, "github-actions[bot]", "APPROVED", False),
+            (sha, worker.REVIEWER, "APPROVED", True),
+            ("b" * 40, worker.REVIEWER, "APPROVED", False),
             (sha, worker.OWNER, "APPROVED", False),
-            (sha, "github-actions[bot]", "CHANGES_REQUESTED", False),
+            (sha, worker.REVIEWER, "CHANGES_REQUESTED", False),
         ]:
             with self.subTest(actor=actor, sha=review_sha, decision=decision):
                 state = {"review": {"sha": sha, "decision": "approve", "summary": "Tests match the issue"}}
