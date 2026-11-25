@@ -35,7 +35,7 @@ jobs:
         id: reviewer
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
         with:
-          client-id: ${{ vars.SPRINT_REVIEWER_CLIENT_ID }}
+          client-id: Iv23liWHaTbKR7lmMaZO # Public client ID of finance-lab-sprint-reviewer
           private-key: ${{ secrets.SPRINT_REVIEWER_PRIVATE_KEY }}
           permission-pull-requests: write
       - name: Record decision on the reviewed revision

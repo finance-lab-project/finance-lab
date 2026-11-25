@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from worker import OWNER, REPO, ROOT, api, endpoint, protected, gh
+from worker import OWNER, REPO, ROOT, api, endpoint, protected
 
 LABEL = "com.finance-lab.sprint-worker"
 PLIST = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
@@ -43,7 +43,6 @@ def main():
     p.add_argument("--reviewer-key", type=Path, help="Downloaded private key of the repository reviewer App")
     p.add_argument("--auto-reload-is-off", action="store_true",
                    help="Confirm the ChatGPT account's automatic credit reload is off.")
-    p.add_argument("--reviewer-client-id", help="Nonsecret client ID shown in the reviewer App settings")
     args = p.parse_args()
     if not args.auto_reload_is_off:
         sys.exit("Confirm automatic credit reload is off in ChatGPT Settings > Usage, then pass --auto-reload-is-off.")
@@ -51,17 +50,20 @@ def main():
     workflow = api(endpoint("contents/.github/workflows/record-agent-review.yml?ref=main"))
     if workflow.get("type") != "file":
         sys.exit("Merge the setup pull request first.")
-    if args.reviewer_key:
-        if not args.reviewer_client_id:
-            sys.exit("Supply the nonsecret --reviewer-client-id from the reviewer App settings.")
-        with args.reviewer_key.open("rb") as key:
+    if api("user")["login"] != OWNER:
+        sys.exit("The GitHub CLI must be signed in as " + OWNER + ".")
+    secrets = api(endpoint("actions/secrets?per_page=100"))
+    configured = any(item["name"] == "SPRINT_REVIEWER_PRIVATE_KEY" for item in secrets["secrets"])
+    key_path = args.reviewer_key
+    if not configured and key_path is None:
+        downloads = sorted((Path.home() / "Downloads").glob("finance-lab-sprint-reviewer*.pem"))
+        if len(downloads) != 1:
+            sys.exit("Download the reviewer key or specify its exact path with --reviewer-key.")
+        key_path = downloads[0]
+    if key_path is not None:
+        with key_path.open("rb") as key:
             subprocess.run(["gh", "secret", "set", "SPRINT_REVIEWER_PRIVATE_KEY", "-R", REPO],
                            stdin=key, check=True)
-        gh("variable", "set", "SPRINT_REVIEWER_CLIENT_ID", "-R", REPO, "--body", args.reviewer_client_id)
-    secrets = api(endpoint("actions/secrets?per_page=100"))
-    if not any(s["name"] == "SPRINT_REVIEWER_PRIVATE_KEY" for s in secrets["secrets"]):
-        sys.exit("Supply the reviewer App key with --reviewer-key.")
-    api(endpoint("actions/variables/SPRINT_REVIEWER_CLIENT_ID"))
     if args.configure_github:
         configure()
     else:

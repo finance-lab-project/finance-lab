@@ -6,12 +6,12 @@ Every five minutes while the Mac is awake, a local process checks for work. Empt
 
 ## Install on the Mac
 
-Use the ChatGPT desktop app's Codex CLI, Python 3.9 or later, Git, and an authenticated GitHub CLI for `anton415`. Confirm automatic credit reload is off in ChatGPT **Settings → Usage**. A dedicated checkout at the merged setup revision is sufficient. The organization-owned private GitHub App `finance-lab-sprint-reviewer` needs only pull requests (read and write) plus automatic metadata access. Install it on the Finance Lab repository only. Generate an App private key in its GitHub settings and give the downloaded file path to the installer. GitHub CLI encrypts the key into a repository Actions secret over standard input. It is never added to Git. Store the downloaded key securely after setup.
+Use the ChatGPT desktop app's Codex CLI, Python 3.9 or later, Git, and an authenticated GitHub CLI for `anton415`. Confirm automatic credit reload is off in ChatGPT **Settings → Usage**. A dedicated checkout at the merged setup revision is sufficient. The organization-owned private GitHub App `finance-lab-sprint-reviewer` needs only pull requests (read and write) plus automatic metadata access. Install it on the Finance Lab repository only. Generate an App private key in its GitHub settings and save it in Downloads. When exactly one reviewer PEM file is present, the installer finds it. Pass its exact path with `--reviewer-key` if there are several. GitHub CLI encrypts the key into a repository Actions secret over standard input. It is never added to Git. Store the downloaded key securely after setup.
 
-Run these commands from the checkout root, substituting the actual downloaded filename:
+Run these commands from the checkout root:
 
 ```sh
-python3 ops/agents/install.py --configure-github --auto-reload-is-off --reviewer-client-id YOUR_CLIENT_ID --reviewer-key "/path/to/downloaded-private-key.pem"
+python3 ops/agents/install.py --configure-github --auto-reload-is-off
 python3 ops/agents/worker.py --check
 ```
 
