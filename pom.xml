@@ -10,7 +10,7 @@
     </parent>
     <groupId>org.financelab</groupId>
     <artifactId>finance-lab</artifactId>
-    <version>0.1.0</version>
+    <version>0.3.0</version>
     <properties>
         <java.version>25</java.version>
     </properties>
