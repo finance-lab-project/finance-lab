@@ -96,7 +96,17 @@ class FireTest {
             assertThat(page(mvc, desktop, "owner-a").expectFirst("#income-total").text()).isEqualTo("185 000 ₽");
             mvc.perform(post("/fire/goals/income").session(phone).principal(() -> "owner-a")
                     .param("amount", "200000")).andExpect(status().isFound());
-            assertThat(page(mvc, desktop, "owner-a").expectFirst("#income-percentage").text()).isEqualTo("25%");
+            saveIncome(mvc, november, second, "0", "0");
+            var beforePayoutEdit = page(mvc, desktop, "owner-a");
+            assertThat(beforePayoutEdit.expectFirst("#income-percentage").text()).isEqualTo("25%");
+            assertThat(beforePayoutEdit.expectFirst("#capital-percentage").text()).isEqualTo("10%");
+
+            saveIncome(mvc, "/investments/2026-09", second, "75000", "15000");
+            var afterPayoutEdit = page(mvc, phone, "owner-a");
+            assertThat(afterPayoutEdit.expectFirst("#income-total").text()).isEqualTo("195 000 ₽");
+            assertThat(afterPayoutEdit.expectFirst("#income-average").text()).isEqualTo("60 000 ₽");
+            assertThat(afterPayoutEdit.expectFirst("#income-percentage").text()).isEqualTo("30%");
+            assertThat(afterPayoutEdit.expectFirst("#capital-percentage").text()).isEqualTo("10%");
         }
     }
 
