@@ -2,6 +2,8 @@ package org.financelab.budget;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.YearMonth;
+import java.util.List;
 import java.util.Map;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -22,6 +24,91 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class FireTest {
     @TempDir Path directory;
+
+    @Test
+    void incomeProgressTracksCompletedMonthsAndConfirmedZeroes() throws Exception {
+        try (var app = new SpringApplicationBuilder(FinanceLabApplication.class).profiles("fixture")
+                .contextFactory(webType -> new GenericWebApplicationContext(new MockServletContext()))
+                .run("--spring.datasource.url=jdbc:sqlite:" + directory.resolve("fire-income.sqlite"),
+                        "--budget.current-month=2026-11",
+                        "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
+                        "--spring.main.banner-mode=off", "--logging.level.root=WARN")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var desktop = new MockHttpSession();
+            var phone = new MockHttpSession();
+            var investments = app.getBean(InvestmentStore.class);
+            var fire = app.getBean(FireStore.class);
+            investments.addAccount("owner-a", "Вклад");
+            investments.addAccount("owner-a", "Брокерский счёт");
+            var accounts = fire.accounts("owner-a");
+            long first = accounts.get(0).id();
+            long second = accounts.get(1).id();
+            fire.saveGoal("owner-a", "income", 100_000);
+            fire.saveGoal("owner-a", "capital", 30_000_000);
+            fire.saveAccounts("owner-a", List.of(first));
+
+            String november = "/investments/2026-11";
+            saveIncome(mvc, november, first, "3000000", "999999");
+            var empty = page(mvc, phone, "owner-a");
+            assertThat(empty.select("#income-empty")).hasSize(1);
+            assertThat(empty.select("#income-range, #income-percentage")).isEmpty();
+
+            saveIncome(mvc, "/investments/2026-08", first, "1000000", "0");
+            saveIncome(mvc, "/investments/2026-09", first, "2000000", "45000");
+            var gap = page(mvc, phone, "owner-a");
+            assertThat(gap.expectFirst("#income-gaps").text()).contains("Период неполный", "Октябрь 2026", "Вклад");
+            assertThat(gap.expectFirst("#income-average").text()).isEqualTo("22 500 ₽");
+            assertThat(gap.expectFirst("#income-gaps a").attr("href")).isEqualTo("/investments/2026-10");
+            mvc.perform(post("/investments/2026-10/accounts/" + first).principal(() -> "owner-a")
+                    .param("closingValue", "2000000").param("creditedIncome", " "))
+                    .andExpect(status().is(422));
+            assertThat(page(mvc, phone, "owner-a").expectFirst("#income-gaps").text()).isEqualTo(gap.expectFirst("#income-gaps").text());
+            saveIncome(mvc, "/investments/2026-10", first, "2000000", "0");
+            var shortHistory = page(mvc, desktop, "owner-a");
+            assertThat(shortHistory.select("#income-gaps")).isEmpty();
+            assertThat(shortHistory.expectFirst("#income-range").text()).contains("Август 2026", "Октябрь 2026");
+            assertThat(shortHistory.expectFirst("#income-total").text()).isEqualTo("45 000 ₽");
+            assertThat(shortHistory.expectFirst("#income-average").parent().text()).contains("за 3 месяца", "15 000 ₽");
+            assertThat(shortHistory.expectFirst("#income-percentage").text()).isEqualTo("15%");
+
+            for (YearMonth month = YearMonth.of(2025, 11); month.isBefore(YearMonth.of(2026, 8)); month = month.plusMonths(1)) {
+                investments.saveMonth("owner-a", first, month, new InvestmentStore.Figures(2_000_000, 15_000));
+            }
+            saveIncome(mvc, "/investments/2025-10", first, "1000000", "999999");
+            var full = page(mvc, desktop, "owner-a");
+            assertThat(full.select("#income-range time").eachAttr("datetime")).containsExactly("2025-11", "2026-10");
+            assertThat(full.expectFirst("#income-total").text()).isEqualTo("180 000 ₽");
+            assertThat(full.expectFirst("#income-average").text()).isEqualTo("15 000 ₽");
+            assertThat(full.expectFirst("#income-target").text()).isEqualTo("100 000 ₽");
+            assertThat(full.expectFirst("#income-percentage").text()).isEqualTo("15%");
+            assertThat(full.expectFirst("#capital-percentage").text()).isEqualTo("10%");
+
+            mvc.perform(post("/fire/accounts").session(desktop).principal(() -> "owner-a")
+                    .param("accountIds", Long.toString(first), Long.toString(second))).andExpect(status().isFound());
+            var missingAccount = page(mvc, phone, "owner-a");
+            assertThat(missingAccount.expectFirst("#income-gaps").text()).contains("Брокерский счёт");
+            assertThat(missingAccount.select("#income-empty")).hasSize(1);
+            assertThat(missingAccount.select("#income-percentage")).isEmpty();
+            assertThat(missingAccount.expectFirst("#income-total").text()).isEqualTo("180 000 ₽");
+            saveIncome(mvc, "/investments/2026-09", second, "50000", "5000");
+            assertThat(page(mvc, phone, "owner-a").expectFirst("#income-average").text()).isEqualTo("50 000 ₽");
+            saveIncome(mvc, "/investments/2026-09", second, "75000", "5000");
+            assertThat(page(mvc, desktop, "owner-a").expectFirst("#income-total").text()).isEqualTo("185 000 ₽");
+            mvc.perform(post("/fire/goals/income").session(phone).principal(() -> "owner-a")
+                    .param("amount", "200000")).andExpect(status().isFound());
+            saveIncome(mvc, november, second, "0", "0");
+            var beforePayoutEdit = page(mvc, desktop, "owner-a");
+            assertThat(beforePayoutEdit.expectFirst("#income-percentage").text()).isEqualTo("25%");
+            assertThat(beforePayoutEdit.expectFirst("#capital-percentage").text()).isEqualTo("10%");
+
+            saveIncome(mvc, "/investments/2026-09", second, "75000", "15000");
+            var afterPayoutEdit = page(mvc, phone, "owner-a");
+            assertThat(afterPayoutEdit.expectFirst("#income-total").text()).isEqualTo("195 000 ₽");
+            assertThat(afterPayoutEdit.expectFirst("#income-average").text()).isEqualTo("60 000 ₽");
+            assertThat(afterPayoutEdit.expectFirst("#income-percentage").text()).isEqualTo("30%");
+            assertThat(afterPayoutEdit.expectFirst("#capital-percentage").text()).isEqualTo("10%");
+        }
+    }
 
     @Test
     void ownerGoalsAndSelectedBalancesDriveCapitalProgressAcrossSessions() throws Exception {
@@ -157,8 +244,12 @@ class FireTest {
     }
 
     private static void saveBalance(MockMvc mvc, String path, String id, String amount) throws Exception {
+        saveIncome(mvc, path, Long.parseLong(id), amount, "0");
+    }
+
+    private static void saveIncome(MockMvc mvc, String path, long id, String balance, String income) throws Exception {
         mvc.perform(post(path + "/accounts/" + id).principal(() -> "owner-a")
-                .param("closingValue", amount).param("creditedIncome", "0")).andExpect(status().isFound());
+                .param("closingValue", balance).param("creditedIncome", income)).andExpect(status().isFound());
     }
 
     private static Document page(MockMvc mvc, MockHttpSession session, String owner) throws Exception {
