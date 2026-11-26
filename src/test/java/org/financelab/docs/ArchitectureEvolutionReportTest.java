@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
@@ -19,13 +20,21 @@ class ArchitectureEvolutionReportTest {
     @Test
     void reportRetainsEditableDiagramsWithSourcedCaptions() throws IOException {
         String report = Files.readString(REPORT);
-        var diagrams = Pattern.compile("(?ms)^```mermaid\\R(.+?)^```\\R\\R"
-                + "\\*Figure [12]\\. [^*]+\\* \\[[^\\]]+\\]\\[[a-z][a-z0-9-]*\\]")
+        var diagrams = Pattern.compile("(?m)^```mermaid\\h*\\R((?:(?!^```\\h*$)[^\\r\\n]*\\R)*)^```\\h*$")
                 .matcher(report);
-        assertTrue(diagrams.find(), "Keep the editable before diagram and sourced caption");
-        assertTrue(diagrams.group(1).contains("PostgreSQL"));
-        assertTrue(diagrams.find(), "Keep the editable after diagram and sourced caption");
-        assertTrue(diagrams.group(1).contains("SQLite"));
+        var captions = Pattern.compile("\\R(?:\\h*\\R)*\\*Figure ([0-9]+)\\. [^*\\r\\n]+\\* "
+                + "\\[[^\\]\\r\\n]+\\]\\[[a-z][a-z0-9-]*\\]").matcher(report);
+        var expectedDatabases = List.of("PostgreSQL", "SQLite");
+        for (int index = 0; index < expectedDatabases.size(); index++) {
+            int figure = index + 1;
+            assertTrue(diagrams.find(), "Missing Mermaid diagram for Figure " + figure);
+            captions.region(diagrams.end(), report.length());
+            assertTrue(captions.lookingAt(), "Missing sourced caption immediately after diagram " + figure);
+            assertEquals(Integer.toString(figure), captions.group(1), "Unexpected figure number");
+            assertTrue(diagrams.group(1).contains(expectedDatabases.get(index)),
+                    "Unexpected database in Figure " + figure);
+        }
+        assertFalse(diagrams.find(), "Unexpected additional Mermaid diagram");
     }
 
     @Test
