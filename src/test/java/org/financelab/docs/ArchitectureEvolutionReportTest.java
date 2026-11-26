@@ -37,7 +37,7 @@ class ArchitectureEvolutionReportTest {
     }
 
     @Test
-    void evidenceCitationsResolveToUniqueReferences() throws IOException {
+    void citationIdsMatchUniqueDefinitionsWithGitHubOrLocalFileTargets() throws IOException {
         String report = Files.readString(REPORT);
         var definitions = Pattern.compile("(?m)^\\[([a-z][a-z0-9-]*)\\]: (\\S+)$").matcher(report);
         var referenceIds = new HashSet<String>();

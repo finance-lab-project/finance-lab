@@ -73,7 +73,11 @@ flowchart LR
 | Early frontend | Implemented. The import PR reports tests for monthly budgets, local storage, and export/restore. | Browser-local behavior. [Frontend import][fe1] |
 | Python learning prototype | Implemented and tested. PR #3 reports 15 offline tests using fake transports. PR #4 reports 57 offline tests including the read-only tool. Dated notes record live model and tool experiments. | Synthetic data and selected model interactions. Product-agent deployment remains unverified. [PR #3][agent3] · [PR #4][agent4] · [Live run][live] · [Tool run][tool] |
 | Vaadin release | Implemented, tested, and deployed as reported. PR #16 records six ORM unit tests and 75 PostgreSQL integration tests. Separate probes reproduced a Budget category-history defect, and PR #12 records the fix and release. | Authenticated browser checks covered deployed read paths. Saves and restart persistence were exercised with a separate database on the selected VM. [ORM PR][app16] · [Release PR][app12] |
-| Spring Boot pilot | Implemented, tested, and deployed as reported. Candidate CI recorded 20 Maven tests with zero failures, errors, or skips. The launch record reports HTTPS sign-in, a synthetic desktop save, physical-phone readback, readback after restarting the rehearsal service, and off-VM decryption and integrity checks on the initial backup. | Candidate CI and bounded launch checks. Backup integrity and readability were checked. Full disaster recovery and sustained usage remain unverified. [Candidate CI][ci] · [Launch record][launch] · [Deployed commit][revision] |
+| Spring Boot pilot | Implemented, tested, and deployed. Candidate CI recorded 20 Maven tests with zero failures, errors, or skips. At launch, the owner signed in over HTTPS, saved a synthetic entry on desktop, and read it on a physical phone. Both devices showed the saved entry after the rehearsal service restarted. | Candidate tests and the launch observations below cover specific save, restart, and backup paths. Sustained usage remains unverified. [Candidate CI][ci] · [Launch record][launch] |
+
+**Local restore rehearsal.** The packaged candidate restored a synthetic budget into a fresh SQLite database. The restored figures matched the saved figures, and an edit to the restored copy left the source data intact. Issue #24 records that the tested candidate (`ed173d2`) and the deployed revision (`220cfdb`) had identical source trees. [Release PR #34][release-pr] · [Launch record][launch] · [Deployed commit][revision]
+
+**Launch backup check.** The initial encrypted backup of the empty live budget passed storage readback, independent off-VM decryption, SQLite integrity checks, and an empty-budget check. This verified the contents of that backup. Recovery of the service on replacement infrastructure after loss of the VM remains unverified. [Launch record][launch]
 
 ## Lessons
 
@@ -111,6 +115,7 @@ Suggested citation for review: [Confirmed author(s)]. ([Publication year]). *Fro
 
 - [Issue #26 architecture evidence and timeline](evidence.md)
 - [Accepted Spring Boot and SQLite implementation decision](https://github.com/finance-lab-project/finance-lab/blob/b158ae68e6d6a0f415ade9fc8430238e60869121/docs/implementation-approach.md#L3-L25)
+- [Release PR #34, packaged candidate and local restore rehearsal](https://github.com/finance-lab-project/finance-lab/pull/34)
 - [Issue #24, private pilot launch verification](https://github.com/finance-lab-project/finance-lab/issues/24)
 - [Frontend settings PR](https://github.com/finance-lab-project/frontend/pull/35)
 - [Python prototype read-only budget tool run](https://github.com/anton415/finance-lab-agent/blob/e46ffee744661117654e54ec048908be61c520fd/docs/t1/t1-2-read-only-budget-tool.md)
@@ -132,6 +137,7 @@ Suggested citation for review: [Confirmed author(s)]. ([Publication year]). *Fro
 
 [evidence]: evidence.md
 [spring]: https://github.com/finance-lab-project/finance-lab/blob/b158ae68e6d6a0f415ade9fc8430238e60869121/docs/implementation-approach.md#L3-L25
+[release-pr]: https://github.com/finance-lab-project/finance-lab/pull/34
 [launch]: https://github.com/finance-lab-project/finance-lab/issues/24
 [fe35]: https://github.com/finance-lab-project/frontend/pull/35
 [tool]: https://github.com/anton415/finance-lab-agent/blob/e46ffee744661117654e54ec048908be61c520fd/docs/t1/t1-2-read-only-budget-tool.md
