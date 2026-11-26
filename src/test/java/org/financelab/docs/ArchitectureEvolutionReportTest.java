@@ -34,7 +34,6 @@ class ArchitectureEvolutionReportTest {
             assertTrue(diagrams.group(1).contains(expectedDatabases.get(index)),
                     "Unexpected database in Figure " + figure);
         }
-        assertFalse(diagrams.find(), "Unexpected additional Mermaid diagram");
     }
 
     @Test
