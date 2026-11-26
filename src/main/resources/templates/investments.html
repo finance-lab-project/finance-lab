@@ -19,6 +19,7 @@
         <a class="nav-link" th:href="@{/settings}">Настройки</a>
         <a class="nav-link" th:href="@{/history}">Ввод истории</a>
         <span class="selected" aria-current="page">Инвестиции</span>
+        <a class="nav-link" th:href="@{/fire}">FIRE</a>
     </aside>
     <main id="investments">
         <h1>Инвестиции</h1>
@@ -32,6 +33,22 @@
             <label>Год <input name="year" type="number" min="1" max="9999" required th:value="${period.year}"></label>
             <button type="submit" class="text-button">Перейти</button>
         </form>
+        <section aria-labelledby="investment-period">
+            <h2 id="investment-period" th:text="${title}"></h2>
+            <dl class="summary monthly-figures">
+                <div><dt>Стоимость портфеля</dt>
+                    <dd id="portfolio-value" th:text="${portfolioValue == null ? 'Нет полной оценки' : @rubles.display(portfolioValue)}"></dd></div>
+                <div><dt th:text="|Стоимость портфеля · ${previousTitle}|"></dt>
+                    <dd id="previous-value" th:text="${previousValue == null ? 'Нет полной оценки' : @rubles.display(previousValue)}"></dd></div>
+                <div><dt th:text="|Изменение стоимости · ${previousTitle} → ${title}|"></dt>
+                    <dd id="value-change" th:text="${valueChange == null ? 'Нет данных для сравнения' :
+                            (valueChange.signum() > 0 ? '+' : '') + @rubles.display(valueChange)}"></dd></div>
+                <div><dt>Зачисленный доход</dt>
+                    <dd id="portfolio-income" th:text="${portfolioIncome == null ? 'Нет полного итога' : @rubles.display(portfolioIncome)}"></dd></div>
+                <div><dt><a th:href="@{/months/{p}(p=${period})}">Взносы из бюджета</a></dt>
+                    <dd id="budget-contributions" th:text="${contributions == null ? 'Нет записи в бюджете' : @rubles.display(contributions)}"></dd></div>
+            </dl>
+        </section>
         <section aria-label="Добавление счёта">
             <p th:if="${accountAdded}" class="notice" role="status">Счёт добавлен.</p>
             <form id="add-investment-account" th:action="@{/investments/{p}/accounts(p=${period})}" method="post">
@@ -46,8 +63,7 @@
                    th:text="${nameError}"></p>
             </form>
         </section>
-        <section aria-labelledby="investment-period">
-            <h2 id="investment-period" th:text="${title}"></h2>
+        <section aria-label="Инвестиционные счета">
             <p th:unless="${accounts.isEmpty()}" id="investment-income-help" class="hint investment-guidance">
                 Сложите зачисленные за месяц проценты, купоны и дивиденды. Реинвестированный купон
                 включайте в доход один раз. Исключите личные переводы и изменение цен.

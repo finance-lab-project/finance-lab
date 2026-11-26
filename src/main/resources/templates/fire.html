@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FIRE · Finance Lab</title>
+    <link rel="stylesheet" th:href="@{/budget.css}">
+</head>
+<body>
+<header class="app-bar">
+    <span class="brand">Finance Lab</span>
+    <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
+</header>
+<div class="layout">
+    <aside aria-label="Разделы Finance Lab">
+        <strong>Бюджет</strong>
+        <a class="nav-link" th:href="@{/months/{p}(p=${period})}">Месяц</a>
+        <a class="nav-link" th:href="@{/years/{y}(y=${period.year})}">Итоги</a>
+        <a class="nav-link" th:href="@{/settings}">Настройки</a>
+        <a class="nav-link" th:href="@{/history}">Ввод истории</a>
+        <a class="nav-link" th:href="@{/investments}">Инвестиции</a>
+        <span class="selected" aria-current="page">FIRE</span>
+    </aside>
+    <main id="fire">
+        <h1>FIRE</h1>
+        <p th:if="${saved}" class="notice" role="status">Настройки сохранены.</p>
+        <section aria-labelledby="capital-progress">
+            <h2 id="capital-progress">Прогресс по капиталу</h2>
+            <dl class="summary monthly-figures">
+                <div><dt>Месяц оценки</dt>
+                    <dd id="observation-month">
+                        <time th:if="${observationMonth != null}" th:attr="datetime=${observationMonth}"
+                              th:text="${observationTitle}"></time>
+                        <span th:if="${observationMonth == null}">Нет данных</span>
+                    </dd></div>
+                <div><dt>Капитал на выбранных счетах</dt>
+                    <dd id="fire-capital" th:text="${capital == null ? 'Нет полной оценки' : @rubles.display(capital)}"></dd></div>
+                <div><dt>Цель по капиталу</dt>
+                    <dd id="capital-target" th:text="${capitalGoal == null ? 'Цель не задана' : @rubles.display(capitalGoal)}"></dd></div>
+                <div th:if="${percentage != null}"><dt>Достигнуто</dt>
+                    <dd id="capital-percentage" th:text="|${percentage}%|"></dd></div>
+                <div th:if="${remaining != null}"><dt>Осталось накопить</dt>
+                    <dd id="capital-remaining" th:text="${@rubles.display(remaining)}"></dd></div>
+            </dl>
+            <p th:if="${emptySelection}" class="hint" id="fire-empty-selection">Выберите счета для расчёта капитала.</p>
+            <p th:unless="${missingAccounts.isEmpty()}" class="hint" id="fire-missing-balances">
+                <span th:text="${observationMonth == null ? 'Нет записей по счетам:' :
+                              'Нет стоимости за месяц оценки по счетам:'}"></span>
+                <span th:text="${#strings.listJoin(missingAccounts, ', ')}"></span>.
+            </p>
+            <p th:if="${observationMonth != null and !missingAccounts.isEmpty()}">
+                <a th:href="@{/investments/{p}(p=${observationMonth})}">Заполнить данные за месяц оценки</a>
+            </p>
+        </section>
+        <section aria-labelledby="fire-goals">
+            <h2 id="fire-goals">Цели</h2>
+            <form id="capital-goal-form" th:action="@{/fire/goals/capital}" method="post">
+                <label class="setting-field">Цель по капиталу, ₽
+                    <input name="amount" type="text" inputmode="numeric" required
+                           th:value="${capitalDraft != null ? capitalDraft : (capitalGoal == null ? '' : @rubles.number(capitalGoal))}"
+                           th:attr="aria-invalid=${capitalError != null},aria-describedby=${capitalError != null ? 'capital-error' : null}">
+                </label>
+                <p id="capital-error" th:if="${capitalError}" th:text="${capitalError}" class="error" role="alert"></p>
+                <button type="submit" class="primary">Сохранить цель по капиталу</button>
+            </form>
+            <form id="income-goal-form" th:action="@{/fire/goals/income}" method="post">
+                <label class="setting-field">Цель по пассивному доходу в месяц, ₽
+                    <input name="amount" type="text" inputmode="numeric" required
+                           th:value="${incomeDraft != null ? incomeDraft : (incomeGoal == null ? '' : @rubles.number(incomeGoal))}"
+                           th:attr="aria-invalid=${incomeError != null},aria-describedby=${incomeError != null ? 'income-error' : null}">
+                </label>
+                <p id="income-error" th:if="${incomeError}" th:text="${incomeError}" class="error" role="alert"></p>
+                <button type="submit" class="primary">Сохранить цель по доходу</button>
+            </form>
+        </section>
+        <section aria-labelledby="fire-accounts">
+            <h2 id="fire-accounts">Счета для расчёта FIRE</h2>
+            <p th:if="${accounts.isEmpty()}"><a th:href="@{/investments}">Добавить инвестиционный счёт</a></p>
+            <form th:unless="${accounts.isEmpty()}" id="fire-accounts-form" th:action="@{/fire/accounts}" method="post">
+                <div th:each="account : ${accounts}">
+                    <label>
+                        <input type="checkbox" name="accountIds" th:value="${account.id()}" th:checked="${account.selected()}">
+                        <span th:text="${account.name()}"></span>
+                    </label>
+                </div>
+                <p th:if="${accountsError}" th:text="${accountsError}" class="error" role="alert"></p>
+                <button type="submit" class="primary">Сохранить выбор счетов</button>
+            </form>
+        </section>
+    </main>
+</div>
+</body>
+</html>

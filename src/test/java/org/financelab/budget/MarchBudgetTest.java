@@ -24,10 +24,18 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.mock.web.MockServletContext;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.web.context.support.GenericWebApplicationContext;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class MarchBudgetTest {
     private static final String MARCH = "/months/2027-03";
@@ -156,6 +164,94 @@ class MarchBudgetTest {
             assertThat(budget.expectFirst("input[name=income]").val()).isEqualTo("12 345");
             assertThat(budget.expectFirst("input[name=contributions]").val()).isEqualTo("4 567");
             assertMonth(budget, "6 000", "20 000", "18 000");
+        }
+    }
+
+    @Test
+    void investmentReviewComparesCompleteCalendarMonthsAndReadsSavedBudgetContributions() throws Exception {
+        String february = "/investments/2027-02";
+        String march = "/investments/2027-03";
+        try (var app = new SpringApplicationBuilder(FinanceLabApplication.class).profiles("demo")
+                .contextFactory(webType -> new GenericWebApplicationContext(new MockServletContext()))
+                .run("--spring.datasource.url=jdbc:sqlite:" + directory.resolve("review.sqlite"),
+                        "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
+                        "--spring.main.banner-mode=off", "--logging.level.root=WARN")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            for (String name : List.of("Вклад", "Брокерский счёт")) {
+                mvc.perform(post(february + "/accounts").principal(() -> "owner-a").param("name", name))
+                        .andExpect(status().isFound());
+            }
+            Document blank = reviewPage(mvc, february);
+            var accounts = blank.select(".investment-account");
+            assertThat(accounts).hasSize(2);
+            var first = accounts.getFirst().attr("action");
+            var second = accounts.getLast().attr("action");
+            mvc.perform(post(first).principal(() -> "owner-a").param("closingValue", "95000").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            Document incomplete = reviewPage(mvc, february);
+            assertThat(incomplete.expectFirst("#portfolio-value").text()).isEqualTo("Нет полной оценки");
+            assertThat(incomplete.expectFirst("#portfolio-income").text()).isEqualTo("Нет полного итога");
+            assertThat(incomplete.select(".investment-account").getLast().text()).contains("Нет записи за этот месяц.");
+            mvc.perform(post(second).principal(() -> "owner-a").param("closingValue", "145000").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            Document firstMonth = reviewPage(mvc, february);
+            assertThat(firstMonth.expectFirst("#portfolio-value").text()).isEqualTo("240 000 ₽");
+            assertThat(firstMonth.expectFirst("#portfolio-income").text()).isEqualTo("0 ₽");
+            assertThat(firstMonth.expectFirst("#previous-value").text()).isEqualTo("Нет полной оценки");
+            assertThat(firstMonth.expectFirst("#value-change").text()).isEqualTo("Нет данных для сравнения");
+
+            mvc.perform(post(first.replace(february, march)).principal(() -> "owner-a")
+                            .param("closingValue", "100000").param("creditedIncome", "1000"))
+                    .andExpect(status().isFound());
+            mvc.perform(post(second.replace(february, march)).principal(() -> "owner-a")
+                            .param("closingValue", "160000").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            for (String contribution : List.of("15000", "0")) {
+                Document budgetForm = reviewPage(mvc, EDIT);
+                var fields = new LinkedMultiValueMap<String, String>();
+                monthFields(budgetForm).forEach(fields::add);
+                fields.set("contributions", contribution);
+                mvc.perform(post(MARCH).principal(() -> "owner-a").params(fields)).andExpect(status().isFound());
+
+                Document review = reviewPage(mvc, march);
+                assertThat(review.expectFirst("#portfolio-value").text()).isEqualTo("260 000 ₽");
+                assertThat(review.expectFirst("#previous-value").text()).isEqualTo("240 000 ₽");
+                assertThat(review.expectFirst("#value-change").text()).isEqualTo("+20 000 ₽");
+                assertThat(review.expectFirst("#value-change").parent().expectFirst("dt").text())
+                        .isEqualTo("Изменение стоимости · Февраль 2027 → Март 2027");
+                assertThat(review.expectFirst("#portfolio-income").text()).isEqualTo("1 000 ₽");
+                assertThat(review.expectFirst("#budget-contributions").text())
+                        .isEqualTo(contribution.equals("0") ? "0 ₽" : "15 000 ₽");
+                assertInvestmentFigures(review.select(".investment-account").getFirst(), "100 000", "1 000");
+                assertInvestmentFigures(review.select(".investment-account").getLast(), "160 000", "0");
+            }
+
+            mvc.perform(post(first.replace(february, "/investments/2027-05")).principal(() -> "owner-a")
+                            .param("closingValue", "0").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            mvc.perform(post(second.replace(february, "/investments/2027-05")).principal(() -> "owner-a")
+                            .param("closingValue", "0").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            Document may = reviewPage(mvc, "/investments/2027-05");
+            assertThat(may.expectFirst("#portfolio-value").text()).isEqualTo("0 ₽");
+            assertThat(may.expectFirst("#value-change").text()).isEqualTo("Нет данных для сравнения");
+            assertThat(may.expectFirst("#budget-contributions").text()).isEqualTo("Нет записи в бюджете");
+
+            String april = "/investments/2027-04";
+            mvc.perform(post(first.replace(february, april)).principal(() -> "owner-a")
+                            .param("closingValue", "100000").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            Document partialPrior = reviewPage(mvc, "/investments/2027-05");
+            assertThat(partialPrior.expectFirst("#portfolio-value").text()).isEqualTo("0 ₽");
+            assertThat(partialPrior.expectFirst("#previous-value").text()).isEqualTo("Нет полной оценки");
+            assertThat(partialPrior.expectFirst("#value-change").text()).isEqualTo("Нет данных для сравнения");
+
+            mvc.perform(post(second.replace(february, april)).principal(() -> "owner-a")
+                            .param("closingValue", "0").param("creditedIncome", "0"))
+                    .andExpect(status().isFound());
+            Document completePrior = reviewPage(mvc, "/investments/2027-05");
+            assertThat(completePrior.expectFirst("#previous-value").text()).isEqualTo("100 000 ₽");
+            assertThat(completePrior.expectFirst("#value-change").text()).isEqualTo("−100 000 ₽");
         }
     }
 
@@ -774,7 +870,7 @@ class MarchBudgetTest {
                 "--spring.main.banner-mode=off", "--logging.level.root=WARN");
     }
 
-    private static Browser signedIn(ConfigurableApplicationContext app, String name) throws Exception {
+    static Browser signedIn(ConfigurableApplicationContext app, String name) throws Exception {
         var browser = new Browser(app);
         browser.login(name, "fixture-" + name);
         return browser;
@@ -786,6 +882,11 @@ class MarchBudgetTest {
         assertThat(html.expectFirst("#row-food .remainder").wholeText()).isEqualTo(remainder + " ₽");
         assertThat(html.expectFirst("#row-food .plan").wholeText()).isEqualTo("24 000 ₽");
         assertThat(html.expectFirst("#row-food .buffer").wholeText()).isEqualTo("−2 000 ₽");
+    }
+
+    private static Document reviewPage(MockMvc mvc, String path) throws Exception {
+        return Jsoup.parse(mvc.perform(get(path).principal(() -> "owner-a"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
     }
 
     private static void assertInvestmentFigures(Element account, String closingValue, String creditedIncome) {
@@ -809,9 +910,9 @@ class MarchBudgetTest {
         return fields;
     }
 
-    private record Page(int status, Document html) { }
+    record Page(int status, Document html) { }
 
-    private static class Browser {
+    static class Browser {
         private final URI base;
         private final HttpClient http = HttpClient.newBuilder()
                 .cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
