@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 class FireStore {
     record Account(long id, String name, boolean selected, @Nullable YearMonth month, @Nullable Long balance) {}
+    record AccountIncome(YearMonth month, String name, @Nullable Long credited) {}
 
     private final JdbcClient jdbc;
 
@@ -49,6 +50,29 @@ class FireStore {
                     return new Account(rs.getLong("id"), rs.getString("name"), rs.getBoolean("selected"),
                             month == null ? null : YearMonth.parse(month), balance);
                 }).list();
+    }
+
+    List<AccountIncome> incomeHistory(String owner, YearMonth last) {
+        return jdbc.sql("""
+                WITH RECURSIVE selected AS (
+                    SELECT a.id, a.name FROM investment_account a JOIN fire_account f ON f.account_id = a.id
+                     WHERE a.owner = :owner
+                ), months(period) AS (
+                    SELECT MAX(:first, MIN(m.period))
+                      FROM investment_month m JOIN selected s ON s.id = m.account_id
+                     WHERE m.period <= :last
+                    HAVING COUNT(*) > 0
+                    UNION ALL
+                    SELECT strftime('%Y-%m', period || '-01', '+1 month') FROM months WHERE period < :last
+                )
+                SELECT months.period, s.name, m.credited_income
+                  FROM months CROSS JOIN selected s
+                  LEFT JOIN investment_month m ON m.account_id = s.id AND m.period = months.period
+                 ORDER BY months.period, s.id
+                """).param("owner", owner).param("first", last.minusMonths(11).toString()).param("last", last.toString())
+                .query((rs, index) -> new AccountIncome(YearMonth.parse(rs.getString("period")), rs.getString("name"),
+                        rs.getObject("credited_income") == null ? null : rs.getLong("credited_income")))
+                .list();
     }
 
     @Transactional

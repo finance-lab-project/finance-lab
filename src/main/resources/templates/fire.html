@@ -24,34 +24,64 @@
     <main id="fire">
         <h1>FIRE</h1>
         <p th:if="${saved}" class="notice" role="status">Настройки сохранены.</p>
-        <section aria-labelledby="capital-progress">
-            <h2 id="capital-progress">Прогресс по капиталу</h2>
-            <dl class="summary monthly-figures">
-                <div><dt>Месяц оценки</dt>
-                    <dd id="observation-month">
-                        <time th:if="${observationMonth != null}" th:attr="datetime=${observationMonth}"
-                              th:text="${observationTitle}"></time>
-                        <span th:if="${observationMonth == null}">Нет данных</span>
-                    </dd></div>
-                <div><dt>Капитал на выбранных счетах</dt>
-                    <dd id="fire-capital" th:text="${capital == null ? 'Нет полной оценки' : @rubles.display(capital)}"></dd></div>
-                <div><dt>Цель по капиталу</dt>
-                    <dd id="capital-target" th:text="${capitalGoal == null ? 'Цель не задана' : @rubles.display(capitalGoal)}"></dd></div>
-                <div th:if="${percentage != null}"><dt>Достигнуто</dt>
-                    <dd id="capital-percentage" th:text="|${percentage}%|"></dd></div>
-                <div th:if="${remaining != null}"><dt>Осталось накопить</dt>
-                    <dd id="capital-remaining" th:text="${@rubles.display(remaining)}"></dd></div>
-            </dl>
-            <p th:if="${emptySelection}" class="hint" id="fire-empty-selection">Выберите счета для расчёта капитала.</p>
-            <p th:unless="${missingAccounts.isEmpty()}" class="hint" id="fire-missing-balances">
-                <span th:text="${observationMonth == null ? 'Нет записей по счетам:' :
-                              'Нет стоимости за месяц оценки по счетам:'}"></span>
-                <span th:text="${#strings.listJoin(missingAccounts, ', ')}"></span>.
-            </p>
-            <p th:if="${observationMonth != null and !missingAccounts.isEmpty()}">
-                <a th:href="@{/investments/{p}(p=${observationMonth})}">Заполнить данные за месяц оценки</a>
-            </p>
-        </section>
+        <div class="fire-progress">
+            <section aria-labelledby="capital-progress">
+                <h2 id="capital-progress">Прогресс по капиталу</h2>
+                <dl class="summary monthly-figures">
+                    <div><dt>Месяц оценки</dt>
+                        <dd id="observation-month">
+                            <time th:if="${observationMonth != null}" th:attr="datetime=${observationMonth}"
+                                  th:text="${observationTitle}"></time>
+                            <span th:if="${observationMonth == null}">Нет данных</span>
+                        </dd></div>
+                    <div><dt>Капитал на выбранных счетах</dt>
+                        <dd id="fire-capital" th:text="${capital == null ? 'Нет полной оценки' : @rubles.display(capital)}"></dd></div>
+                    <div><dt>Цель по капиталу</dt>
+                        <dd id="capital-target" th:text="${capitalGoal == null ? 'Цель не задана' : @rubles.display(capitalGoal)}"></dd></div>
+                    <div th:if="${percentage != null}"><dt>Достигнуто</dt>
+                        <dd id="capital-percentage" th:text="|${percentage}%|"></dd></div>
+                    <div th:if="${remaining != null}"><dt>Осталось накопить</dt>
+                        <dd id="capital-remaining" th:text="${@rubles.display(remaining)}"></dd></div>
+                </dl>
+                <p th:if="${emptySelection}" class="hint" id="fire-empty-selection">Выберите счета для расчёта капитала.</p>
+                <p th:unless="${missingAccounts.isEmpty()}" class="hint" id="fire-missing-balances">
+                    <span th:text="${observationMonth == null ? 'Нет записей по счетам:' :
+                                  'Нет стоимости за месяц оценки по счетам:'}"></span>
+                    <span th:text="${#strings.listJoin(missingAccounts, ', ')}"></span>.
+                </p>
+                <p th:if="${observationMonth != null and !missingAccounts.isEmpty()}">
+                    <a th:href="@{/investments/{p}(p=${observationMonth})}">Заполнить данные за месяц оценки</a>
+                </p>
+            </section>
+            <section aria-labelledby="income-progress">
+                <h2 id="income-progress">Прогресс по пассивному доходу</h2>
+                <p id="income-range" th:if="${incomeFirst != null}">
+                    <time th:attr="datetime=${incomeFirst}" th:text="${incomeFirstTitle}"></time> —
+                    <time th:attr="datetime=${incomeLast}" th:text="${incomeLastTitle}"></time>
+                </p>
+                <dl class="summary monthly-figures">
+                    <div th:if="${incomeTotal != null}"><dt>Зачислено по сохранённым данным</dt>
+                        <dd id="income-total" th:text="${@rubles.display(incomeTotal)}"></dd></div>
+                    <div th:if="${incomeAverage != null}"><dt>В среднем в месяц<br><span th:text="${incomeDuration}"></span></dt>
+                        <dd id="income-average" th:text="${@rubles.display(incomeAverage)}"></dd></div>
+                    <div><dt>Цель по доходу в месяц</dt>
+                        <dd id="income-target" th:text="${incomeGoal == null ? 'Цель не задана' : @rubles.display(incomeGoal)}"></dd></div>
+                    <div th:if="${incomePercentage != null}"><dt>Достигнуто</dt>
+                        <dd id="income-percentage" th:text="|${incomePercentage}%|"></dd></div>
+                </dl>
+                <p th:if="${incomeAverage == null}" class="hint" id="income-empty">Нет завершённых месяцев с полными данными по выбранным счетам.</p>
+                <div id="income-gaps" th:if="${incomeGaps != null and !incomeGaps.isEmpty()}">
+                    <p>Период неполный. Нет данных о доходе по счетам:</p>
+                    <ul>
+                        <li th:each="gap : ${incomeGaps}">
+                            <a th:href="@{/investments/{p}(p=${gap.month()})}" th:text="${gap.title()}"></a>
+                            <span th:text="|— ${#strings.listJoin(gap.accounts(), ', ')}|"></span>
+                        </li>
+                    </ul>
+                    <p th:if="${incomeAverage != null}" class="hint">Среднее и процент рассчитаны по месяцам с полными данными.</p>
+                </div>
+            </section>
+        </div>
         <section aria-labelledby="fire-goals">
             <h2 id="fire-goals">Цели</h2>
             <form id="capital-goal-form" th:action="@{/fire/goals/capital}" method="post">
