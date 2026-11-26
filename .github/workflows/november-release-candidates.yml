@@ -1,0 +1,45 @@
+name: Build November 29 release candidates
+on:
+  push:
+    branches: [rehearsal/nov-29-candidates]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: '0.3.0'
+            revision: e40542f17233f8258e70f0abcf62c7cbbfadc61c
+          - version: '0.4.0'
+            revision: 5bf31207f9398538d675aead9a230da35badd621
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.revision }}
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - run: mvn --batch-mode --no-transfer-progress verify
+      - name: Record the source and checksum
+        working-directory: target
+        env:
+          VERSION: ${{ matrix.version }}
+        run: |
+          git rev-parse HEAD > SOURCE_REVISION
+          sha256sum "finance-lab-$VERSION.jar" > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finance-lab-v${{ matrix.version }}-candidate
+          path: |
+            target/finance-lab-${{ matrix.version }}.jar
+            target/SHA256SUMS
+            target/SOURCE_REVISION
+          if-no-files-found: error
+          retention-days: 14
