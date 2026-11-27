@@ -70,9 +70,16 @@ def amount(html, selector):
 def budget(session):
     march = page(session, "/months/2027-03")
     december = page(session, "/months/2026-12")
-    return (amount(march, "#actual-income"), amount(march, "#actual-contributions"),
-            amount(december, "#row-food .plan"), amount(december, "#row-food .actual"),
-            amount(page(session, "/years/2027"), "#year-spending"))
+    year = page(session, "/years/2027")
+    return {
+        "march_income": amount(march, "#actual-income"),
+        "march_contributions": amount(march, "#actual-contributions"),
+        "december_food_plan": amount(december, "#row-food .plan"),
+        "december_food_spending": amount(december, "#row-food .actual"),
+        "annual_income": amount(year, "#year-income"),
+        "annual_spending": amount(year, "#year-spending"),
+        "annual_contributions": amount(year, "#year-contributions"),
+    }
 
 
 def snapshot(source, target):
@@ -82,14 +89,20 @@ def snapshot(source, target):
 
 
 def check_upgrade(session, baseline):
-    assert budget(session) == baseline
+    observed = budget(session)
+    assert observed == baseline, (observed, baseline)
     january = page(session, "/months/2027-01")
     assert amount(january, "#row-food .buffer") == -2000
     assert amount(january, "#row-food .plan") == 24000
     assert amount(january, "#row-food .actual") == 25000
     assert amount(january, "#row-food .available") == -3000
-    assert page(session, "/investments/2027-03").h1.get_text(strip=True) == "Инвестиции"
-    assert page(session, "/fire").h1.get_text(strip=True) == "FIRE"
+    investments = page(session, "/investments/2027-03")
+    assert amount(investments, "#budget-contributions") == baseline["march_contributions"]
+    fire = page(session, "/fire")
+    assert fire.select_one("#fire-empty-selection") is not None
+    assert fire.select_one("#income-empty") is not None
+    for target in ("#capital-target", "#income-target"):
+        assert fire.select_one(target).get_text(strip=True) == "Цель не задана"
 
 
 def digest(path):
@@ -132,8 +145,12 @@ def rehearse(args, work):
     source = work / "source.sqlite"
     with pilot(previous, "demo", source) as session:
         baseline = budget(session)
-        assert baseline[:4] == (50000, 10000, 22000, 24000)
-        assert baseline[4] > 0
+        assert baseline["march_income"] == 50000
+        assert baseline["march_contributions"] == 10000
+        assert baseline["december_food_plan"] == 22000
+        assert baseline["december_food_spending"] == 24000
+        assert all(baseline[key] > 0 for key in ("annual_income", "annual_spending", "annual_contributions"))
+        print(f"Published baseline: {baseline}", flush=True)
     backup = work / "backup.sqlite"
     snapshot(source, backup)
     original = digest(source)
@@ -145,8 +162,10 @@ def rehearse(args, work):
             snapshot(backup, recovered)
         with pilot(candidate, "fixture", database) as session:
             check_upgrade(session, baseline)
-        print(f"Passed {phase}: Budget {baseline}, January carry, Investments and FIRE", flush=True)
+        print(f"Passed {phase}: {baseline}, January carry -2000 / available -3000, "
+              f"Investments contribution {baseline['march_contributions']}, FIRE empty", flush=True)
     assert digest(source) == original
+    print(f"Source database unchanged: SHA-256 {original}", flush=True)
 
 
 if __name__ == "__main__":
