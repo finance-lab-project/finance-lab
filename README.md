@@ -1,3 +1,5 @@
+[![Build and tests](https://github.com/finance-lab-project/finance-lab/actions/workflows/verify.yml/badge.svg?branch=main&event=push)](https://github.com/finance-lab-project/finance-lab/actions/workflows/verify.yml?query=branch%3Amain+event%3Apush) [![Latest release](https://img.shields.io/github/v/release/finance-lab-project/finance-lab?label=latest%20release)](https://github.com/finance-lab-project/finance-lab/releases/latest)
+
 # Finance Lab
 
 Finance Lab is a personal budgeting application for planning monthly income,
@@ -9,8 +11,6 @@ scope; investment portfolio management and FIRE calculations are later areas.
 The first version targets the Russian market: a Russian-only interface and RUB
 budgets in whole rubles, without kopecks. Multi-currency support is later work.
 Google's Material Design is the primary reference for UI/UX decisions.
-
-[![Build and tests](https://github.com/finance-lab-project/finance-lab/actions/workflows/verify.yml/badge.svg?branch=main&event=push)](https://github.com/finance-lab-project/finance-lab/actions/workflows/verify.yml?query=branch%3Amain+event%3Apush) [![Latest release](https://img.shields.io/github/v/release/finance-lab-project/finance-lab?label=latest%20release)](https://github.com/finance-lab-project/finance-lab/releases/latest)
 
 ## Documentation
 
