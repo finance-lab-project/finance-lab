@@ -80,7 +80,9 @@ def check_upgrade(session, baseline):
     assert budget(session) == baseline
     january = page(session, "/months/2027-01")
     assert amount(january, "#row-food .buffer") == -2000
-    assert amount(january, "#row-food .available") == amount(january, "#row-food .plan") - 2000
+    assert amount(january, "#row-food .plan") == 24000
+    assert amount(january, "#row-food .actual") == 25000
+    assert amount(january, "#row-food .available") == -3000
     assert page(session, "/investments/2027-03").h1.get_text(strip=True) == "Инвестиции"
     assert page(session, "/fire").h1.get_text(strip=True) == "FIRE"
 
