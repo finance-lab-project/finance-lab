@@ -1,21 +1,50 @@
-name: Store the verified demo screenshot
+name: Verify visitor links and open the CI changes for review
 on:
   push:
     branches: [docs/capture-released-budget]
 permissions: {}
 jobs:
-  save-image:
+  verify-public-links:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
-      actions: read
-      contents: write
+      contents: read
     steps:
-      - name: Store the published v0.1.0 demo image as a Git blob
+      - name: Verify the public pin and Wiki
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run download 45944908829 --repo finance-lab-project/finance-lab --name released-budget-screenshot
-          file march-budget.png | grep 'PNG image data'
-          base64 -w0 march-budget.png | jq -Rs '{content: ., encoding: "base64"}' |
-            gh api --method POST repos/finance-lab-project/finance-lab/git/blobs --input - --jq '.sha'
+          gh api graphql -f query='{organization(login:"finance-lab-project"){pinnedItems(first:6,types:[REPOSITORY]){nodes{... on Repository{nameWithOwner}}}}}' --jq '.data.organization.pinnedItems.nodes[0].nameWithOwner' | grep -Fx 'finance-lab-project/finance-lab'
+          curl -fsSL https://github.com/finance-lab-project/finance-lab/wiki > wiki.html
+          grep -q 'Understand the architecture' wiki.html
+      - name: Follow the public downloads in the README
+        run: |
+          release_url="https://github.com/finance-lab-project/finance-lab/releases/download/v0.1.0"
+          curl -fsSLO "$release_url/finance-lab-0.1.0.jar"
+          curl -fsSLO "$release_url/finance-lab-0.1.0.jar.sha256"
+          shasum -a 256 -c finance-lab-0.1.0.jar.sha256
+  open-maintainer-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Open the prepared CI and security policy PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          repo=finance-lab-project/finance-lab
+          branch=ops/verify-main-and-reporting
+          test "$(gh api repos/$repo/branches/$branch --jq .commit.sha)" = '6631ab29fa96330d1905033b283af76d4bba49a2'
+          existing="$(gh pr list -R "$repo" --head "$branch" --base main --json number --jq '.[0].number // empty')"
+          if [ -z "$existing" ]; then
+            cat > "$RUNNER_TEMP/pr.md" <<'EOF'
+          Implements #58 and the reporting policy in #60.
+
+          Codex prepared this change. The existing required verify job now also runs after merges to main, using the same Maven and sprint-worker tests. The badges link to main-branch push results and the latest release. SECURITY.md directs reports to the private GitHub form enabled on this repository.
+
+          GitHub Actions opened the PR so the maintainer can independently review it. The existing approval and CI requirements apply. After merge, verify the first main-branch run and badge before closing #58. Weekly grouped dependency updates are tracked separately in #60 for after release #43.
+          EOF
+            gh pr create -R "$repo" --base main --head "$branch" --title "Verify main, display CI and release badges, and document private reporting" --body-file "$RUNNER_TEMP/pr.md"
+          fi
