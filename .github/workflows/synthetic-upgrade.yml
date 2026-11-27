@@ -1,0 +1,54 @@
+name: Synthetic upgrade demonstration
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ops/rehearse-upgrade.py
+      - .github/workflows/synthetic-upgrade.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  rehearse:
+    if: github.head_ref == 'sprint/issue-70' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Install rehearsal dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rehearsal"
+          "$RUNNER_TEMP/rehearsal/bin/pip" install requests beautifulsoup4
+      - name: Exercise the retained artifacts and verification failures
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          check=("$RUNNER_TEMP/rehearsal/bin/python" ops/rehearse-upgrade.py
+            --previous-tag v0.1.0
+            --previous-sha256 3d316819b966261f53cd026c6b2dbe3f1892a2884cf823d47615a849324ff7a3
+            --artifact-id 15112660408
+            --archive-sha256 63c60d3bff80524c79a8a9db160e77e4eb6327196f6303292bf1c4267287b035
+            --revision 5bf31207f9398538d675aead9a230da35badd621
+            --candidate-sha256 e2c81f8072512ba1bed99a90d8bc04499eec566f86017f26e28591a7cde2115d)
+          rejects() {
+            local reason="$1"
+            shift
+            if "${check[@]}" "$@" >"$RUNNER_TEMP/rejection.log" 2>&1; then
+              echo "Unexpected verification success" >&2
+              exit 1
+            fi
+            cat "$RUNNER_TEMP/rejection.log"
+            grep -Fxq "$reason" "$RUNNER_TEMP/rejection.log"
+          }
+          rejects "candidate JAR checksum mismatch" --candidate-sha256 "$(printf '%064d' 0)"
+          rejects "candidate revision mismatch" --revision "$(printf '%040d' 0)"
+          "${check[@]}"
