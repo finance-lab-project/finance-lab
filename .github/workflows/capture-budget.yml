@@ -1,0 +1,55 @@
+name: Capture the released Budget demo
+on:
+  push:
+    branches: [docs/capture-released-budget]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Run the released JAR with a fresh demo database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.1.0 -R finance-lab-project/finance-lab -p finance-lab-0.1.0.jar
+          echo '3d316819b966261f53cd026c6b2dbe3f1892a2884cf823d47615a849324ff7a3  finance-lab-0.1.0.jar' | sha256sum -c -
+          export BUDGET_OWNER_A_PASSWORD="$(openssl rand -hex 12)" BUDGET_OWNER_B_PASSWORD="$(openssl rand -hex 12)"
+          export BUDGET_DB="$RUNNER_TEMP/demo.sqlite"
+          java --enable-native-access=ALL-UNNAMED -jar finance-lab-0.1.0.jar --spring.profiles.active=demo > "$RUNNER_TEMP/demo.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for attempt in {1..45}; do
+            if curl -fsS -o /dev/null http://127.0.0.1:8080/login; then break; fi
+            sleep 1
+          done
+          python -m venv "$RUNNER_TEMP/capture-env"
+          "$RUNNER_TEMP/capture-env/bin/pip" -q install selenium==4.27.1
+          "$RUNNER_TEMP/capture-env/bin/python" - <<'PY'
+          import os
+          from selenium import webdriver
+          from selenium.webdriver.common.by import By
+          from selenium.webdriver.support.ui import WebDriverWait
+          options = webdriver.ChromeOptions()
+          options.add_argument("--headless=new")
+          options.add_argument("--window-size=1360,950")
+          options.add_argument("--disable-dev-shm-usage")
+          with webdriver.Chrome(options=options) as browser:
+              browser.get("http://127.0.0.1:8080/")
+              browser.find_element(By.ID, "username").send_keys("owner-a")
+              browser.find_element(By.ID, "password").send_keys(os.environ["BUDGET_OWNER_A_PASSWORD"])
+              browser.find_element(By.CSS_SELECTOR, "button.primary").click()
+              WebDriverWait(browser, 15).until(lambda page: page.find_element(By.ID, "month"))
+              assert "2027" in browser.find_element(By.TAG_NAME, "h1").text
+              assert "6 000" in " ".join(browser.find_element(By.TAG_NAME, "body").text.split())
+              assert browser.save_screenshot("march-budget.png")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: released-budget-screenshot
+          path: march-budget.png
