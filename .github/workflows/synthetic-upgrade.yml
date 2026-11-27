@@ -1,7 +1,7 @@
 name: Synthetic upgrade demonstration
 on:
-  push:
-    branches: [rehearsal/issue-70]
+  pull_request:
+    branches: [main]
     paths:
       - ops/rehearse-upgrade.py
       - .github/workflows/synthetic-upgrade.yml
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   rehearse:
+    if: github.head_ref == 'rehearsal/issue-70' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -45,7 +46,8 @@ jobs:
               echo "Unexpected verification success" >&2
               exit 1
             fi
-            grep -Fx "$reason" "$RUNNER_TEMP/rejection.log"
+            cat "$RUNNER_TEMP/rejection.log"
+            grep -Fxq "$reason" "$RUNNER_TEMP/rejection.log"
           }
           rejects "candidate JAR checksum mismatch" --candidate-sha256 "$(printf '%064d' 0)"
           rejects "candidate revision mismatch" --revision "$(printf '%040d' 0)"
