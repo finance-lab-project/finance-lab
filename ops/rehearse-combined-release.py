@@ -22,7 +22,8 @@ def pilot(jar, profile, database):
                BUDGET_OWNER_A_PASSWORD=PASSWORD, BUDGET_OWNER_B_PASSWORD=secrets.token_urlsafe(24))
     process = subprocess.Popen(
         ["java", "--enable-native-access=ALL-UNNAMED", "-jar", jar,
-         f"--spring.profiles.active={profile}", "--server.port=18080"],
+         f"--spring.profiles.active={profile}", "--server.port=18080",
+         "--budget.current-month=2027-03"],
         env=env)
     try:
         with requests.Session() as session:
