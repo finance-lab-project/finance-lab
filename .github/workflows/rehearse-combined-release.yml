@@ -1,0 +1,40 @@
+name: Rehearse combined v0.4.0 direct upgrade
+on:
+  push:
+    branches: [rehearsal/combined-v040-direct-upgrade]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  direct-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@v4
+        with:
+          name: finance-lab-v0.4.0-candidate
+          run-id: 45809545487
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify the deployed v0.1.0 and candidate binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.1.0 --repo "$GITHUB_REPOSITORY" --pattern finance-lab-0.1.0.jar
+          echo '3d316819b966261f53cd026c6b2dbe3f1892a2884cf823d47615a849324ff7a3  finance-lab-0.1.0.jar' | sha256sum -c -
+          echo 'e2c81f8072512ba1bed99a90d8bc04499eec566f86017f26e28591a7cde2115d  candidate/finance-lab-0.4.0.jar' | sha256sum -c -
+          test "$(cat candidate/SOURCE_REVISION)" = 5bf31207f9398538d675aead9a230da35badd621
+      - name: Start both versions against a synthetic Budget and verify the upgrade
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rehearsal-venv"
+          "$RUNNER_TEMP/rehearsal-venv/bin/pip" install --quiet requests beautifulsoup4
+          "$RUNNER_TEMP/rehearsal-venv/bin/python" ops/rehearse-combined-release.py
