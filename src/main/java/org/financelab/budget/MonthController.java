@@ -2,7 +2,9 @@ package org.financelab.budget;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.security.Principal;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -48,7 +50,32 @@ class MonthController {
     @GetMapping("/months/{month}")
     String month(Principal owner, @PathVariable @DateTimeFormat(pattern = "uuuu-MM") YearMonth month,
                  @RequestParam(defaultValue = "false") boolean edit, Model model) {
-        return view(model, month, store.read(owner.getName(), month), edit);
+        return view(model, owner.getName(), month, store.read(owner.getName(), month), edit);
+    }
+
+    @PostMapping("/months/{month}/reconcile")
+    String reconcile(Principal principal, @PathVariable @DateTimeFormat(pattern = "uuuu-MM") YearMonth month,
+                     @RequestParam Map<String, String> fields, Model model, HttpServletResponse response) {
+        String owner = principal.getName();
+        var errors = new HashMap<String, String>();
+        long balance = MonthActuals.amount("cardBalance", fields, errors);
+        LocalDate date = null;
+        try {
+            date = LocalDate.parse(fields.getOrDefault("referenceDate", ""));
+            if (date.getYear() < 1 || !month.equals(YearMonth.from(date)) || date.isAfter(period.todayInMoscow())) {
+                errors.put("referenceDate", "Укажите прошедшую или сегодняшнюю дату в выбранном месяце.");
+            }
+        } catch (DateTimeParseException invalid) {
+            errors.put("referenceDate", "Укажите дату сверки.");
+        }
+        if (!errors.isEmpty()) {
+            response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
+            model.addAttribute("reconciliationErrors", errors);
+            model.addAttribute("reconciliationDraft", fields);
+            return view(model, owner, month, store.read(owner, month), false);
+        }
+        store.reconcile(owner, date, balance);
+        return "redirect:/months/" + month;
     }
 
     @PostMapping("/months/linked-value")
@@ -76,14 +103,15 @@ class MonthController {
         var errors = new HashMap<String, String>();
         if (planRevision == current.planRevision()) {
             MonthActuals actuals = MonthActuals.parse(current, draft, errors);
+            var correction = MonthActuals.correctionDate(month, store.cash(owner, month), draft, errors);
             if (!errors.isEmpty()) {
                 response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
                 model.addAttribute("revision", revision);
                 model.addAttribute("draft", draft);
                 model.addAttribute("errors", errors);
-                return view(model, month, current, true);
+                return view(model, owner, month, current, true);
             }
-            if (revision == current.figures().revision() && store.replace(owner, month, current, revision, actuals)) {
+            if (revision == current.figures().revision() && store.replace(owner, month, current, revision, actuals, correction)) {
                 redirect.addFlashAttribute("saved", true);
                 return "redirect:/months/" + month;
             }
@@ -97,10 +125,20 @@ class MonthController {
         model.addAttribute("conflict", true);
         model.addAttribute("draft", draft);
         model.addAttribute("errors", errors);
-        return view(model, month, current, true);
+        return view(model, owner, month, current, true);
     }
 
-    private String view(Model model, YearMonth month, MonthBudget budget, boolean editing) {
+    private String view(Model model, String owner, YearMonth month, MonthBudget budget, boolean editing) {
+        var cash = store.cash(owner, month);
+        model.addAttribute("cash", cash);
+        var today = period.todayInMoscow();
+        if (!month.isAfter(YearMonth.from(today))) {
+            model.addAttribute("reconciliationMax", month.equals(YearMonth.from(today)) ? today : month.atEndOfMonth());
+            var defaults = cash != null && month.equals(YearMonth.from(cash.date()))
+                    ? Map.of("referenceDate", cash.date().toString(), "cardBalance", Rubles.number(cash.cardBalance()))
+                    : Map.of();
+            model.mergeAttributes(Map.of("reconciliationDraft", defaults, "reconciliationErrors", Map.of()));
+        }
         model.addAttribute("editing", editing);
         if (editing) {
             var original = MonthActuals.savedFields(budget);

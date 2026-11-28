@@ -81,3 +81,10 @@ CREATE TABLE IF NOT EXISTS fire_goal (
 CREATE TABLE IF NOT EXISTS fire_account (
     account_id INTEGER PRIMARY KEY REFERENCES investment_account(id)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS cash_reconciliation (
+    owner TEXT PRIMARY KEY,
+    reference_date TEXT NOT NULL,
+    card_balance INTEGER NOT NULL,
+    later_movement TEXT NOT NULL
+) STRICT;

@@ -26,6 +26,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.context.support.GenericWebApplicationContext;
@@ -72,6 +73,94 @@ class MarchBudgetTest {
             browser.login(login, replacement);
             assertThat(browser.get(MARCH).html().expectFirst("#actual-income").text()).isEqualTo("12 345 ₽");
         }
+    }
+
+    @Test
+    void reconcilesBudgetCardsWithoutChangingActualsOrCategoryCarry() throws Exception {
+        String referenceDate = "2027-03-15";
+        var reconciliation = Map.of("referenceDate", referenceDate, "cardBalance", "100 000");
+        try (var app = startCashTest("2027-03")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO month_actuals VALUES
+                        ('owner-a', '2027-02', 10000, 5000, 0),
+                        ('owner-a', '2027-03', 20000, 10000, 0)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2027-02', 'food', 18000, 15000),
+                        ('owner-a', '2027-03', 'food', 60000, 50000)
+                    """).update();
+            jdbc.sql("INSERT INTO investment_account VALUES (1, 'owner-a', 'Вклад')").update();
+            jdbc.sql("INSERT INTO investment_month VALUES (1, '2027-03', 250000, 1000)").update();
+            jdbc.sql("INSERT INTO fire_account VALUES (1)").update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            Document before = reviewPage(mvc, MARCH);
+            assertThat(before.select("#cash-opening")).isEmpty();
+            var form = before.expectFirst("#cash-reconciliation-form");
+            cashPost(mvc, form, Map.of("referenceDate", "2027-04-01", "cardBalance", "100000"))
+                    .andExpect(status().is(422));
+            cashPost(mvc, form, reconciliation).andExpect(status().isFound());
+            Document reconciled = reviewPage(mvc, MARCH);
+            assertCash(reconciled, "150 000 ₽", "100 000 ₽");
+            for (String selector : List.of("#actual-income", "#actual-contributions", "#spending",
+                    "#row-food .buffer", "#row-food .plan")) {
+                assertThat(reconciled.expectFirst(selector).text()).isEqualTo(before.expectFirst(selector).text());
+            }
+            assertThat(reviewPage(mvc, "/fire").expectFirst("#fire-capital").text()).isEqualTo("250 000 ₽");
+            var edit = reviewPage(mvc, EDIT).expectFirst("#month-form");
+            cashPost(mvc, edit, Map.of("amount-food", "55000", "correctionDate", referenceDate))
+                    .andExpect(status().is(422));
+            cashPost(mvc, edit, Map.of("amount-food", "55000", "correctionDate", "2027-03-10"))
+                    .andExpect(status().isFound());
+            assertCash(reviewPage(mvc, MARCH), "155 000 ₽", "100 000 ₽");
+            cashPost(mvc, reviewPage(mvc, EDIT).expectFirst("#month-form"), Map.of("amount-food", "60000"))
+                    .andExpect(status().isFound());
+            assertCash(reviewPage(mvc, MARCH), "155 000 ₽", "95 000 ₽");
+            cashPost(mvc, form, reconciliation).andExpect(status().isFound());
+            assertCash(reviewPage(mvc, MARCH), "155 000 ₽", "95 000 ₽");
+            assertThat(mvc.perform(get(MARCH).principal(() -> "owner-b")).andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString()).doesNotContain("cash-reference-date");
+        }
+        try (var restarted = startCashTest("2027-04")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) restarted).build();
+            assertCash(reviewPage(mvc, MARCH), "155 000 ₽", "95 000 ₽");
+            String history = "/history/2027-03";
+            cashPost(mvc, reviewPage(mvc, history).expectFirst("#history-form"),
+                    Map.of("amount-food", "65000", "correctionDate", "2027-03-10")).andExpect(status().isFound());
+            Document corrected = reviewPage(mvc, MARCH);
+            assertCash(corrected, "160 000 ₽", "95 000 ₽");
+            assertThat(corrected.expectFirst("#spending").text()).isEqualTo("65 000 ₽");
+            assertThat(corrected.expectFirst("#row-food .buffer").text()).isEqualTo("3 000 ₽");
+            cashPost(mvc, reviewPage(mvc, "/months/2027-04?edit=true").expectFirst("#month-form"),
+                    Map.of("income", "2000")).andExpect(status().isFound());
+            assertCash(reviewPage(mvc, "/months/2027-04"), "160 000 ₽", "97 000 ₽");
+        }
+    }
+
+    private ConfigurableApplicationContext startCashTest(String month) {
+        return new SpringApplicationBuilder(FinanceLabApplication.class).profiles("fixture")
+                .contextFactory(webType -> new GenericWebApplicationContext(new MockServletContext()))
+                .run("--spring.datasource.url=jdbc:sqlite:" + directory.resolve("cash.sqlite"),
+                        "--budget.current-month=" + month,
+                        "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
+                        "--spring.main.banner-mode=off", "--logging.level.root=WARN");
+    }
+
+    private static ResultActions cashPost(MockMvc mvc, Element form, Map<String, String> edits) throws Exception {
+        var fields = new LinkedMultiValueMap<String, String>();
+        for (var input : form.select("input[name]:not([disabled])")) {
+            fields.set(input.attr("name"), input.val());
+        }
+        edits.forEach(fields::set);
+        return mvc.perform(post(form.attr("action")).principal(() -> "owner-a").params(fields));
+    }
+
+    private static void assertCash(Document page, String opening, String balance) {
+        assertThat(page.expectFirst("#cash-reference-date").text()).isEqualTo("2027-03-15");
+        assertThat(page.expectFirst("#cash-reference-balance").text()).isEqualTo("100 000 ₽");
+        assertThat(page.expectFirst("#cash-opening").text()).isEqualTo(opening);
+        assertThat(page.expectFirst("#cash-balance").text()).isEqualTo(balance);
     }
 
     @Test
