@@ -83,6 +83,21 @@ class MonthStore {
         for (int index = 0; index < 12; index++) {
             YearMonth month = january.plusMonths(index);
             MonthBudget budget = read(owner, month, current, false);
+            if (index == 0 && budget.terms() == null) {
+                // Monthly records before January supply the opening rates when settings are absent.
+                jdbc.sql("""
+                        SELECT category, name, plan FROM (
+                            SELECT m.category, c.name, m.plan,
+                                   row_number() OVER (PARTITION BY m.category ORDER BY m.period DESC) AS recency
+                              FROM category_month m JOIN category c ON c.code = m.category
+                             WHERE m.owner = ? AND m.period < ?
+                        ) WHERE recency = 1
+                        """).params(owner, january.toString()).query(rs -> {
+                    String code = rs.getString("category");
+                    rates.put(code, rs.getLong("plan"));
+                    categories.put(code, YearReport.Category.empty(code, rs.getString("name")));
+                });
+            }
             YearReport.Actuals actuals = YearReport.Actuals.from(budget);
             months.add(new YearReport.Month(month, actuals));
             totals = totals.plus(actuals);

@@ -419,6 +419,32 @@ class MarchBudgetTest {
     }
 
     @Test
+    void yearUsesLatestMonthlyRateBeforeJanuaryWithoutRecordingProjections() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2026-11', 'food', 20000, 20000),
+                        ('owner-a', '2026-12', 'food', 30000, 25000),
+                        ('owner-a', '2027-07', 'food', 35000, 27000),
+                        ('owner-b', '2026-12', 'food', 45000, 45000)
+                    """).update();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2028, 1));
+
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
+            assertThat(report.categories()).singleElement().satisfies(category -> {
+                assertThat(category.plan()).isEqualTo(report.spendingPlan());
+                assertThat(category.actual()).isEqualTo(BigInteger.valueOf(27000));
+            });
+            assertThat(report.totalBuffer()).isEqualTo(BigInteger.valueOf(13000));
+            assertThat(report.months()).filteredOn(month -> month.period().getMonthValue() != 7)
+                    .extracting(YearReport.Month::actuals).containsOnly(YearReport.Actuals.ZERO);
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Long.class).single()).isEqualTo(4L);
+            assertThat(jdbc.sql("SELECT count(*) FROM month_actuals").query(Long.class).single()).isZero();
+        }
+    }
+
+    @Test
     void yearUsesEffectiveSettingsAndRespectsCategoryInception() {
         try (var app = start(false, "2028-01")) {
             var jdbc = app.getBean(JdbcClient.class);
