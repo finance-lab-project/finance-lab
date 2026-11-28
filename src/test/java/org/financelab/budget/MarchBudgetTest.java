@@ -20,8 +20,11 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
@@ -48,6 +51,60 @@ class MarchBudgetTest {
     private static final String MARCH = "/months/2027-03";
     private static final String EDIT = MARCH + "?edit=true";
     @TempDir Path directory;
+
+    @Test
+    void privacyPolicyIsAvailableBeforeSignInAndFromSignedInPages() throws Exception {
+        String password = "synthetic-privacy-test-password";
+        try (var app = startPilot(password)) {
+            var browser = new Browser(app);
+            var publicPolicy = browser.get("/privacy");
+            assertThat(publicPolicy.status()).isEqualTo(200);
+            assertThat(publicPolicy.html().select("main h2").eachText()).containsExactly(
+                    "Вход и сессия", "Данные бюджета", "Журналы приложения", "Аналитика");
+            assertThat(publicPolicy.html().select("form, script")).isEmpty();
+            assertThat(publicPolicy.html().selectFirst("main").text()).contains(
+                    "Yandex Cloud Object Storage",
+                    "подтвердить при запуске пилота",
+                    "фактическими расходами",
+                    "в защищённом журнале вне сервера пилота",
+                    "Сообщения об ошибках могут содержать сведения о запросе.");
+
+            var login = browser.get("/login");
+            assertThat(login.status()).isEqualTo(200);
+            assertThat(login.html().select("main p:has(a[href=/privacy]) + form[action=/login]")).hasSize(1);
+            assertThat(login.html().select("footer a[href=/privacy]")).hasSize(1);
+            assertThat(browser.get(MARCH).status()).isEqualTo(302);
+
+            browser.login("pilot-owner", password);
+            for (String path : List.of(MARCH, EDIT, "/settings", "/history/2027-02", "/years/2027", "/investments/2027-03", "/fire")) {
+                var page = browser.get(path);
+                assertThat(page.status()).as(path).isEqualTo(200);
+                assertThat(page.html().select("footer a[href=/privacy]")).as(path).hasSize(1);
+            }
+            var signedInPolicy = browser.get("/privacy");
+            assertThat(signedInPolicy.status()).isEqualTo(200);
+            assertThat(signedInPolicy.html().selectFirst("main").text())
+                    .isEqualTo(publicPolicy.html().selectFirst("main").text());
+        }
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void invalidPlanningIncomeIsExcludedFromApplicationLogs(CapturedOutput output) throws Exception {
+        String password = "synthetic-privacy-test-password";
+        String marker = "synthetic-private-planning-income";
+        try (var app = startPilot(password)) {
+            var browser = new Browser(app);
+            browser.login("pilot-owner", password);
+            var page = browser.get(EDIT);
+            var response = browser.post("/months/linked-value", Map.of(
+                    "unit", "percent", "value", "10", "planningIncome", marker, "_csrf", csrf(page.html())));
+
+            assertThat(output.getAll().contains(marker)).as("application logs contain the rejected value").isFalse();
+            assertThat(response.status()).isEqualTo(400);
+            assertThat(response.html().body().text()).isEqualTo("Укажите корректный плановый доход.");
+        }
+    }
 
     @Test
     void pilotReopensTheSameMonthFromAnotherSessionAndAfterCredentialRotation() throws Exception {

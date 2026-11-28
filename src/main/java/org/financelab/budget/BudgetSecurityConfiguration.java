@@ -25,7 +25,7 @@ class BudgetSecurityConfiguration {
     @Bean
     SecurityFilterChain budgetAccess(HttpSecurity http) throws Exception {
         return http.authorizeHttpRequests(access -> access
-                        .requestMatchers("/budget.css", "/month.js", "/error").permitAll()
+                        .requestMatchers("/budget.css", "/month.js", "/error", "/privacy").permitAll()
                         .anyRequest().authenticated())
                 .formLogin(login -> login.loginPage("/login")
                         .defaultSuccessUrl("/", true).permitAll())

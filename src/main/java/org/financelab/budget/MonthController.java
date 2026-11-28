@@ -39,6 +39,11 @@ class MonthController {
         return "login";
     }
 
+    @GetMapping("/privacy")
+    String privacy() {
+        return "privacy";
+    }
+
     @GetMapping("/months")
     String select(@RequestParam int year, @RequestParam int month) {
         if (year < 1 || year > 9999 || month < 1 || month > 12) {
@@ -80,11 +85,17 @@ class MonthController {
 
     @PostMapping("/months/linked-value")
     ResponseEntity<String> linkedValue(@RequestParam String unit, @RequestParam String value,
-                                       @RequestParam long planningIncome) {
+                                       @RequestParam String planningIncome) {
+        long income;
+        try {
+            income = Long.parseLong(planningIncome);
+        } catch (NumberFormatException invalid) {
+            return ResponseEntity.badRequest().body("Укажите корректный плановый доход.");
+        }
         try {
             String linked = switch (unit) {
-                case "amount" -> PlanCalculator.displayedPercent(Rubles.parse(value), planningIncome);
-                case "percent" -> Rubles.number(MonthActuals.fromPercent(value, planningIncome));
+                case "amount" -> PlanCalculator.displayedPercent(Rubles.parse(value), income);
+                case "percent" -> Rubles.number(MonthActuals.fromPercent(value, income));
                 default -> throw new IllegalArgumentException("Выберите рубли или проценты.");
             };
             return ResponseEntity.ok(linked);
