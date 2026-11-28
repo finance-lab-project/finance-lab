@@ -45,6 +45,15 @@ CREATE TABLE IF NOT EXISTS month_actuals (
     PRIMARY KEY (owner, period)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS month_figure_recording (
+    owner TEXT NOT NULL,
+    period TEXT NOT NULL,
+    income_recorded INTEGER NOT NULL,
+    contributions_recorded INTEGER NOT NULL,
+    PRIMARY KEY (owner, period),
+    FOREIGN KEY (owner, period) REFERENCES month_actuals(owner, period)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS planning_settings (
     owner TEXT NOT NULL,
     since TEXT NOT NULL,

@@ -4,9 +4,9 @@ import java.math.BigInteger;
 import java.time.YearMonth;
 import java.util.List;
 
-record YearReport(int year, YearMonth cutoff, int completedMonths, List<Month> months,
-                  Actuals totals, Actuals completedTotals, BigInteger spendingPlan, BigInteger investmentPlan,
-                  List<Category> categories) {
+record YearReport(int year, YearMonth cutoff, YearMonth averageStart, List<Month> months,
+                  Actuals totals, Average incomeAverage, Average spendingAverage, Average contributionsAverage,
+                  BigInteger spendingPlan, BigInteger investmentPlan, List<Category> categories) {
     record Month(YearMonth period, Actuals actuals) {}
 
     record Actuals(BigInteger income, BigInteger spending, BigInteger contributions) {
@@ -23,32 +23,43 @@ record YearReport(int year, YearMonth cutoff, int completedMonths, List<Month> m
         }
     }
 
-    record Category(String code, String name, BigInteger plan, BigInteger actual,
-                    BigInteger completedActual, BigInteger buffer) {
-        static Category empty(String code, String name) {
-            return new Category(code, name, BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO, BigInteger.ZERO);
+    record Average(BigInteger total, int count) {
+        static final Average EMPTY = new Average(BigInteger.ZERO, 0);
+
+        Average withMonth(BigInteger actual) {
+            return new Average(total.add(actual), count + 1);
         }
 
-        Category withMonth(MonthBudget.Category month, boolean completed) {
-            var amount = BigInteger.valueOf(month.actual());
-            return new Category(code, month.name(), plan, actual.add(amount),
-                    completed ? completedActual.add(amount) : completedActual, buffer);
+        public BigInteger rounded() {
+            return new Fraction(total, BigInteger.valueOf(count)).rounded();
+        }
+    }
+
+    record Category(String code, String name, BigInteger plan, BigInteger actual,
+                    Average average, BigInteger buffer) {
+        static Category empty(String code, String name) {
+            return new Category(code, name, BigInteger.ZERO, BigInteger.ZERO, Average.EMPTY, BigInteger.ZERO);
+        }
+
+        Category withMonth(MonthBudget.Category month) {
+            return new Category(code, month.name(), plan,
+                    actual.add(BigInteger.valueOf(month.actual())), average, buffer);
+        }
+
+        Category withRecordedActual(BigInteger amount) {
+            return new Category(code, name, plan, actual, average.withMonth(amount), buffer);
         }
 
         Category withBalance(BigInteger balance) {
-            return new Category(code, name, plan, actual, completedActual, buffer.add(balance));
+            return new Category(code, name, plan, actual, average, buffer.add(balance));
         }
 
         Category withPlan(BigInteger amount) {
-            return new Category(code, name, plan.add(amount), actual, completedActual, buffer);
+            return new Category(code, name, plan.add(amount), actual, average, buffer);
         }
     }
 
     public BigInteger totalBuffer() {
         return categories.stream().map(Category::buffer).reduce(BigInteger.ZERO, BigInteger::add);
-    }
-
-    public BigInteger roundedAverage(BigInteger completedTotal) {
-        return new Fraction(completedTotal, BigInteger.valueOf(completedMonths)).rounded();
     }
 }

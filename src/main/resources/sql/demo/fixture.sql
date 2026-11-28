@@ -22,8 +22,10 @@ WITH RECURSIVE
             ('2027-01', 'leisure', 12000, 10000), ('2027-02', 'leisure', 12000, 14000), ('2027-03', 'leisure', 12000,  1000),
             ('2027-01', 'travel',   8000,  5000), ('2027-02', 'travel',   8000,  6000), ('2027-03', 'travel',   8000,     0)
     )
-INSERT INTO category_month (owner, period, category, plan, actual)
-SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual
+-- The fixture supplies actuals for every row, including the explicit zeroes.
+INSERT INTO category_month (owner, period, category, plan, actual, revision)
+SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual,
+       CASE WHEN fixture.actual = 0 THEN 1 ELSE 0 END
 FROM fixture CROSS JOIN demo_new_owners owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
 
@@ -32,14 +34,15 @@ INSERT INTO category_month_inherited_plan (owner, period, category)
 SELECT m.owner, m.period, m.category FROM category_month m JOIN demo_new_owners o ON o.name = m.owner
  WHERE m.period IN ('2027-02', '2027-03');
 
-DROP TABLE temp.demo_new_owners;
+-- Older demo rows have no seed marker. Keep untouched zeroes missing until
+-- the owner explicitly records an actual through history.
 
--- Include existing walkthrough databases. The reserved food key identifies the demo months.
+-- Only owners seeded by this run receive the example income and contributions.
 WITH figures(period, income, contributions) AS (VALUES
     ('2027-01', 98000, 35000), ('2027-02', 102000, 45000), ('2027-03', 50000, 10000)
 )
 INSERT INTO month_actuals (owner, period, income, contributions, revision)
-SELECT m.owner, m.period, f.income, f.contributions, 0
-  FROM category_month m JOIN figures f ON f.period = m.period
- WHERE m.category = 'food'
-ON CONFLICT (owner, period) DO NOTHING;
+SELECT o.name, f.period, f.income, f.contributions, 0
+  FROM demo_new_owners o CROSS JOIN figures f;
+
+DROP TABLE temp.demo_new_owners;

@@ -101,7 +101,7 @@ class MonthController {
         MonthBudget current = store.read(owner, month);
         var draft = new HashMap<>(fields);
         var errors = new HashMap<String, String>();
-        if (planRevision == current.planRevision()) {
+        if (revision == current.figures().revision() && planRevision == current.planRevision()) {
             MonthActuals actuals = MonthActuals.parse(current, draft, errors);
             var correction = MonthActuals.correctionDate(month, store.reconciliationDate(owner), draft, errors);
             if (!errors.isEmpty()) {
@@ -111,7 +111,7 @@ class MonthController {
                 model.addAttribute("errors", errors);
                 return view(model, owner, month, current, true);
             }
-            if (revision == current.figures().revision() && store.replace(owner, month, current, revision, actuals, correction)) {
+            if (store.replace(owner, month, current, revision, actuals, correction)) {
                 redirect.addFlashAttribute("saved", true);
                 return "redirect:/months/" + month;
             }
@@ -121,6 +121,10 @@ class MonthController {
         // Keep the submitted inputs for review and include any categories added on the other device.
         MonthActuals.savedFields(current).forEach(draft::putIfAbsent);
         MonthActuals.parse(current, draft, errors);
+        // An invalid typed value still needs correction before the owner can accept the new revision.
+        if (errors.keySet().stream().anyMatch(key -> !fields.getOrDefault(key, "").isBlank())) {
+            model.addAttribute("revision", revision);
+        }
         response.setStatus(HttpStatus.CONFLICT.value());
         model.addAttribute("conflict", true);
         model.addAttribute("draft", draft);
@@ -148,7 +152,7 @@ class MonthController {
         }
         model.addAttribute("month", budget);
         model.addAttribute("period", month);
-        YearMonth current = period.current();
+        YearMonth current = period.currentInMoscow();
         model.addAttribute("historyPeriod", month.isBefore(current) ? month : current.minusMonths(1));
         model.addAttribute("months", BudgetPeriod.MONTHS);
         model.addAttribute("title", BudgetPeriod.title(month));

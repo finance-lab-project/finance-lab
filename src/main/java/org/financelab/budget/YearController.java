@@ -27,17 +27,14 @@ class YearController {
 
     @GetMapping("/years/{year}")
     String year(Principal owner, @PathVariable int year, Model model) {
-        YearMonth current = period.current();
+        YearMonth current = period.currentInMoscow();
         YearReport report = store.readYear(owner.getName(), validYear(year), current);
         model.addAttribute("report", report);
         model.addAttribute("months", BudgetPeriod.MONTHS);
         model.addAttribute("monthLink", year == current.getYear() ? current : YearMonth.of(year, 1));
         model.addAttribute("bufferDate", BudgetPeriod.startDate(report.cutoff()));
-        int count = report.completedMonths();
-        if (count > 0) {
-            model.addAttribute("averagePeriod", count == 1 ? BudgetPeriod.title(YearMonth.of(year, 1))
-                    : "Январь — " + BudgetPeriod.MONTHS.get(count - 1) + " " + year);
-        }
+        model.addAttribute("averagePeriod", BudgetPeriod.title(report.averageStart())
+                + " — " + BudgetPeriod.title(report.cutoff().minusMonths(1)));
         return "year";
     }
 

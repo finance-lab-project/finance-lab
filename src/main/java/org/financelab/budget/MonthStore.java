@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -21,7 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Repository
 class MonthStore {
     record HistoricalCategory(String code, String name, long plan, long actual, boolean recorded,
-                              boolean explicitPlan, long effectivePlan) {}
+                              boolean explicitPlan, boolean actualRecorded, long effectivePlan) {}
     record HistoricalEdit(String code, long plan, long actual, boolean actualProvided, boolean planProvided) {}
     record History(MonthBudget.Figures figures, long planRevision, List<HistoricalCategory> categories) {
         public String percent(long amount) {
@@ -160,7 +161,7 @@ class MonthStore {
                 .param("cutoff", (month.isBefore(current) ? month : current).toString())
                 .query((rs, index) -> new MonthBudget.Category(rs.getString("category"), rs.getString("name"),
                         rs.getString("kind"), rs.getLong("plan"), rs.getLong("actual"),
-                        rs.getLong("opening_buffer")))
+                        rs.getBoolean("actual_recorded"), rs.getLong("opening_buffer")))
                 .list();
         return new MonthBudget(terms, figures(owner, month), categories);
     }
@@ -171,12 +172,11 @@ class MonthStore {
         YearMonth january = YearMonth.of(year, 1);
         YearMonth nextJanuary = january.plusYears(1);
         YearMonth cutoff = current.isBefore(nextJanuary) ? current : nextJanuary;
-        int completedMonths = (int) Math.max(0, january.until(cutoff, ChronoUnit.MONTHS));
+        YearMonth averageStart = cutoff.minusMonths(12);
 
         var months = new ArrayList<YearReport.Month>(12);
         var categories = new LinkedHashMap<String, YearReport.Category>();
         var totals = YearReport.Actuals.ZERO;
-        var completedTotals = YearReport.Actuals.ZERO;
         BigInteger investmentPlan = BigInteger.ZERO;
         for (int index = 0; index < 12; index++) {
             YearMonth month = january.plusMonths(index);
@@ -184,28 +184,35 @@ class MonthStore {
             YearReport.Actuals actuals = YearReport.Actuals.from(budget);
             months.add(new YearReport.Month(month, actuals));
             totals = totals.plus(actuals);
-            boolean completed = index < completedMonths;
-            if (completed) completedTotals = completedTotals.plus(actuals);
             if (budget.terms() != null) {
                 investmentPlan = investmentPlan.add(BigInteger.valueOf(budget.allocation().investments()));
             }
             for (var row : budget.categories()) {
                 var category = categories.computeIfAbsent(row.code(), code -> YearReport.Category.empty(code, row.name()));
-                categories.put(row.code(), category.withMonth(row, completed));
+                categories.put(row.code(), category.withMonth(row));
             }
         }
 
-        // Carry only recorded plans forward, including records from earlier years.
+        var spendingByMonth = new HashMap<YearMonth, BigInteger>();
+        // Carry recorded plans forward, including records from earlier years.
         jdbc.sql("""
-                SELECT m.category, c.name, m.plan, m.actual
+                SELECT m.period, m.category, c.name, m.plan, m.actual, m.revision
                   FROM category_month m JOIN category c ON c.code = m.category
-                 WHERE m.owner = ? AND m.period < ?
-                """).params(owner, cutoff.toString()).query(rs -> {
+                 WHERE m.owner = ? AND m.period <= ?
+                """).params(owner, cutoff.minusMonths(1).toString()).query(rs -> {
             String code = rs.getString("category");
             String name = rs.getString("name");
             var category = categories.computeIfAbsent(code, key -> YearReport.Category.empty(key, name));
-            var balance = BigInteger.valueOf(rs.getLong("plan")).subtract(BigInteger.valueOf(rs.getLong("actual")));
-            categories.put(code, category.withBalance(balance));
+            var actual = BigInteger.valueOf(rs.getLong("actual"));
+            var balance = BigInteger.valueOf(rs.getLong("plan")).subtract(actual);
+            category = category.withBalance(balance);
+            YearMonth month = YearMonth.parse(rs.getString("period"));
+            // Legacy plan rows have zero actuals and no actual revision.
+            if (!month.isBefore(averageStart) && (actual.signum() != 0 || rs.getLong("revision") > 0)) {
+                category = category.withRecordedActual(actual);
+                spendingByMonth.merge(month, actual, BigInteger::add);
+            }
+            categories.put(code, category);
         });
         jdbc.sql(readYearPlansSql).param("owner", owner).param("january", january.toString())
                 .param("last", nextJanuary.minusMonths(1).toString()).query(rs -> {
@@ -221,13 +228,28 @@ class MonthStore {
                 });
         BigInteger spendingPlan = categories.values().stream().map(YearReport.Category::plan)
                 .reduce(BigInteger.ZERO, BigInteger::add);
-        return new YearReport(year, cutoff, completedMonths, List.copyOf(months), totals, completedTotals,
-                spendingPlan, investmentPlan, List.copyOf(categories.values()));
+        var incomeAverage = YearReport.Average.EMPTY;
+        var contributionsAverage = YearReport.Average.EMPTY;
+        var spendingAverage = YearReport.Average.EMPTY;
+        for (YearMonth month = averageStart; month.isBefore(cutoff); month = month.plusMonths(1)) {
+            var figures = figures(owner, month);
+            if (figures.incomeRecorded()) {
+                incomeAverage = incomeAverage.withMonth(BigInteger.valueOf(figures.income()));
+            }
+            if (figures.contributionsRecorded()) {
+                contributionsAverage = contributionsAverage.withMonth(BigInteger.valueOf(figures.contributions()));
+            }
+            var spending = spendingByMonth.get(month);
+            if (spending != null) spendingAverage = spendingAverage.withMonth(spending);
+        }
+
+        return new YearReport(year, cutoff, averageStart, List.copyOf(months), totals, incomeAverage,
+                spendingAverage, contributionsAverage, spendingPlan, investmentPlan, List.copyOf(categories.values()));
     }
 
     @Transactional
     public History readHistory(String owner, YearMonth month) {
-        YearMonth current = period.current();
+        YearMonth current = period.currentInMoscow();
         plans.refreshForYear(owner, current);
         var terms = plans.terms(owner, current);
         var categories = jdbc.sql(readHistorySql)
@@ -235,18 +257,25 @@ class MonthStore {
                 .param("last", month.withMonth(12).toString())
                 .query((rs, index) -> new HistoricalCategory(rs.getString("category"), rs.getString("name"),
                         rs.getLong("plan"), rs.getLong("actual"), rs.getBoolean("recorded"),
-                        rs.getBoolean("explicit_plan"), rs.getLong("effective_plan"))).list();
+                        rs.getBoolean("explicit_plan"), rs.getBoolean("actual_recorded"), rs.getLong("effective_plan"))).list();
         return new History(figures(owner, month), terms == null ? 0 : terms.revision(), categories);
     }
 
     private MonthBudget.Figures figures(String owner, YearMonth month) {
-        return savedFigures(owner, month).orElse(new MonthBudget.Figures(0, 0, 0));
+        return savedFigures(owner, month).orElse(new MonthBudget.Figures(0, 0, 0, false, false));
     }
 
     Optional<MonthBudget.Figures> savedFigures(String owner, YearMonth month) {
-        return jdbc.sql("SELECT income, contributions, revision FROM month_actuals WHERE owner = ? AND period = ?")
-                .params(owner, month.toString())
-                .query((rs, i) -> new MonthBudget.Figures(rs.getLong(1), rs.getLong(2), rs.getLong(3)))
+        // A legacy nonzero value proves entry. The monthly revision only proves a save occurred.
+        return jdbc.sql("""
+                SELECT m.income, m.contributions, m.revision,
+                       (m.income <> 0 OR coalesce(r.income_recorded, 0)) AS income_recorded,
+                       (m.contributions <> 0 OR coalesce(r.contributions_recorded, 0)) AS contributions_recorded
+                  FROM month_actuals m LEFT JOIN month_figure_recording r USING (owner, period)
+                 WHERE m.owner = ? AND m.period = ?
+                """).params(owner, month.toString())
+                .query((rs, i) -> new MonthBudget.Figures(rs.getLong(1), rs.getLong(2), rs.getLong(3),
+                        rs.getBoolean(4), rs.getBoolean(5)))
                 .optional();
     }
 
@@ -258,17 +287,23 @@ class MonthStore {
     @Transactional
     public boolean replace(String owner, YearMonth month, MonthBudget saved, long revision, MonthActuals actuals,
                            LocalDate correction) {
-        boolean changed = actuals.income() != saved.figures().income()
-                || actuals.contributions() != saved.figures().contributions()
-                || saved.categories().stream().anyMatch(row -> row.actual() != actuals.spending().get(row.code()));
-        var figures = new MonthBudget.Figures(actuals.income(), actuals.contributions(), changed ? revision + 1 : revision);
-        if (!claim(owner, month, month, revision, saved.planRevision(), figures)) return false;
+        var figures = submittedFigures(actuals.income(), actuals.contributions(), revision);
+        boolean changed = !figures.equals(saved.figures())
+                || saved.categories().stream().anyMatch(row -> {
+                    Long actual = actuals.spending().get(row.code());
+                    return actual != null && (!row.actualRecorded() || row.actual() != actual);
+                });
+        if (!claim(owner, month, month, revision, saved.planRevision(), figures, changed ? revision + 1 : revision)) {
+            return false;
+        }
 
-        BigInteger change = net(actuals.income(), actuals.contributions())
+        BigInteger change = net(figures.income(), figures.contributions())
                 .subtract(net(saved.figures().income(), saved.figures().contributions()));
         for (var row : saved.categories()) {
-            change = change.add(net(row.actual(), actuals.spending().get(row.code())));
-            saveCategory(owner, month, row.code(), row.plan(), actuals.spending().get(row.code()), false, 0);
+            Long actual = actuals.spending().get(row.code());
+            change = change.add(net(row.actual(), actual == null ? 0 : actual));
+            saveCategory(owner, month, row.code(), row.plan(), actual == null ? 0 : actual, false,
+                    actual == null ? 0 : 1);
         }
         trackMovement(owner, month, correction, change);
         if (changed) refreshPlan(owner, month, period.current());
@@ -276,17 +311,19 @@ class MonthStore {
     }
 
     @Transactional
-    public boolean replaceHistory(String owner, YearMonth month, History saved, long income, long contributions,
+    public boolean replaceHistory(String owner, YearMonth month, History saved, Long income, Long contributions,
                                   List<HistoricalEdit> categories, LocalDate correction) {
-        YearMonth current = period.current();
+        YearMonth current = period.currentInMoscow();
         long revision = saved.figures().revision();
-        var figures = new MonthBudget.Figures(income, contributions, revision + 1);
-        if (!month.isBefore(current) || !claim(owner, month, current, revision, saved.planRevision(), figures)) return false;
+        var figures = submittedFigures(income, contributions, revision);
+        if (!month.isBefore(current) || !claim(owner, month, current, revision, saved.planRevision(), figures, revision + 1)) {
+            return false;
+        }
         for (var row : categories) {
             int initialRevision = row.actualProvided() ? 1 : 0;
             saveCategory(owner, month, row.code(), row.plan(), row.actual(), row.planProvided(), initialRevision);
         }
-        BigInteger change = net(income, contributions).subtract(net(saved.figures().income(), saved.figures().contributions()));
+        BigInteger change = net(figures.income(), figures.contributions()).subtract(net(saved.figures().income(), saved.figures().contributions()));
         change = change.add(saved.categories().stream().map(row -> BigInteger.valueOf(row.actual()))
                 .reduce(BigInteger.ZERO, BigInteger::add));
         change = change.subtract(categories.stream().map(row -> BigInteger.valueOf(row.actual()))
@@ -296,12 +333,25 @@ class MonthStore {
         return true;
     }
 
+    private static MonthBudget.Figures submittedFigures(Long income, Long contributions, long revision) {
+        return new MonthBudget.Figures(income == null ? 0 : income, contributions == null ? 0 : contributions,
+                revision, income != null, contributions != null);
+    }
+
     private boolean claim(String owner, YearMonth month, YearMonth settingsMonth, long revision, long planRevision,
-                          MonthBudget.Figures figures) {
-        return jdbc.sql(replaceMonthSql).param("owner", owner).param("period", month.toString())
+                          MonthBudget.Figures figures, long nextRevision) {
+        int claimed = jdbc.sql(replaceMonthSql).param("owner", owner).param("period", month.toString())
                 .param("income", figures.income()).param("contributions", figures.contributions())
-                .param("revision", revision).param("nextRevision", figures.revision())
-                .param("settingsPeriod", settingsMonth.toString()).param("planRevision", planRevision).update() == 1;
+                .param("revision", revision).param("nextRevision", nextRevision)
+                .param("settingsPeriod", settingsMonth.toString()).param("planRevision", planRevision).update();
+        if (claimed != 1) return false;
+        jdbc.sql("""
+                INSERT INTO month_figure_recording (owner, period, income_recorded, contributions_recorded)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (owner, period) DO UPDATE SET income_recorded = excluded.income_recorded,
+                    contributions_recorded = excluded.contributions_recorded
+                """).params(owner, month.toString(), figures.incomeRecorded(), figures.contributionsRecorded()).update();
+        return true;
     }
 
     private void saveCategory(String owner, YearMonth month, String category, long plan, long actual,
@@ -322,8 +372,9 @@ class MonthStore {
                 INSERT INTO category_month (owner, period, category, plan, actual, revision) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (owner, period, category) DO UPDATE
                    SET plan = CASE WHEN ? THEN excluded.plan ELSE category_month.plan END,
-                       revision = CASE WHEN category_month.actual = excluded.actual
-                                       THEN category_month.revision ELSE category_month.revision + 1 END,
+                       revision = CASE WHEN category_month.actual <> excluded.actual THEN category_month.revision + 1
+                                       WHEN excluded.actual = 0 THEN max(category_month.revision, excluded.revision)
+                                       ELSE category_month.revision END,
                        actual = excluded.actual
                 """).params(owner, period, category, plan, actual, initialRevision, explicitPlan).update();
     }

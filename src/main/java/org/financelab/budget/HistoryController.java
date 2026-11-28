@@ -35,7 +35,7 @@ class HistoryController {
     @GetMapping
     String select(@RequestParam(required = false) Integer year, @RequestParam(required = false) Integer month,
                   Principal owner, Model model, HttpServletResponse response) {
-        YearMonth latest = period.current().minusMonths(1);
+        YearMonth latest = period.currentInMoscow().minusMonths(1);
         if (year == null && month == null) return "redirect:/history/" + latest;
         if (year != null && month != null && year >= 1 && year <= latest.getYear() && month >= 1 && month <= 12) {
             YearMonth selected = YearMonth.of(year, month);
@@ -62,8 +62,8 @@ class HistoryController {
         var draft = new HashMap<>(fields);
         var errors = new HashMap<String, String>();
         if (revision == saved.figures().revision() && planRevision == saved.planRevision()) {
-            long income = MonthActuals.amount("income", draft, errors);
-            long contributions = MonthActuals.amount("contributions", draft, errors);
+            Long income = MonthActuals.figure("income", saved.figures().incomeRecorded(), draft, errors);
+            Long contributions = MonthActuals.figure("contributions", saved.figures().contributionsRecorded(), draft, errors);
             List<HistoricalEdit> categories = parseCategories(saved, draft, errors);
             var correction = MonthActuals.correctionDate(month, store.reconciliationDate(owner), draft, errors);
             if (!errors.isEmpty()) {
@@ -87,7 +87,7 @@ class HistoryController {
     }
 
     private void requirePast(YearMonth month) {
-        if (month.getYear() < 1 || !month.isBefore(period.current())) {
+        if (month.getYear() < 1 || !month.isBefore(period.currentInMoscow())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Выберите завершённый месяц.");
         }
     }
@@ -99,18 +99,17 @@ class HistoryController {
         model.mergeAttributes(Map.of("draft", original, "errors", Map.of()));
         model.addAttribute("history", saved);
         model.addAttribute("period", month);
-        model.addAttribute("current", period.current());
+        model.addAttribute("current", period.currentInMoscow());
         model.addAttribute("months", BudgetPeriod.MONTHS);
         return "history";
     }
 
     private static Map<String, String> savedFields(History saved) {
         Map<String, String> fields = new HashMap<>();
-        fields.put("income", Rubles.number(saved.figures().income()));
-        fields.put("contributions", Rubles.number(saved.figures().contributions()));
+        MonthActuals.addFigureFields(fields, saved.figures());
         for (var row : saved.categories()) {
             fields.put("plan-" + row.code(), row.explicitPlan() ? Rubles.number(row.plan()) : "");
-            fields.put("amount-" + row.code(), row.recorded() ? Rubles.number(row.actual()) : "");
+            fields.put("amount-" + row.code(), row.actualRecorded() ? Rubles.number(row.actual()) : "");
         }
         return fields;
     }
@@ -126,7 +125,7 @@ class HistoryController {
             if (!row.recorded() && planMissing && actualMissing) continue;
 
             long plan = planMissing ? row.effectivePlan() : MonthActuals.amount(planKey, draft, errors);
-            long actual = !row.recorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
+            long actual = !row.actualRecorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
             if (plan < 0) errors.put(planKey, "Плановая сумма не может быть отрицательной.");
             categories.add(new HistoricalEdit(row.code(), plan, actual, !actualMissing, !planMissing));
         }
