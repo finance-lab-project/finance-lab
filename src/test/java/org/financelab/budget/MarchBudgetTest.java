@@ -1,6 +1,7 @@
 package org.financelab.budget;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
@@ -404,14 +405,14 @@ class MarchBudgetTest {
             var store = app.getBean(MonthStore.class);
             YearMonth january = YearMonth.of(2028, 1);
             var late = store.readYear("owner-a", 2027, january);
-            assertThat(late.spendingPlan()).isEqualByComparingTo("360000");
+            assertThat(late.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
             assertThat(late.categories()).singleElement().satisfies(category -> {
                 assertThat(category.plan()).isEqualTo(late.spendingPlan());
-                assertThat(category.actual()).isEqualByComparingTo("52000");
-                assertThat(category.buffer()).isEqualByComparingTo("8000");
+                assertThat(category.actual()).isEqualTo(BigInteger.valueOf(52000));
+                assertThat(category.buffer()).isEqualTo(BigInteger.valueOf(8000));
             });
             assertThat(late.months().getFirst().actuals()).isEqualTo(YearReport.Actuals.ZERO);
-            assertThat(store.readYear("owner-b", 2027, january).spendingPlan()).isEqualByComparingTo("390000");
+            assertThat(store.readYear("owner-b", 2027, january).spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
             assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Long.class).single()).isEqualTo(4L);
             assertThat(jdbc.sql("SELECT count(*) FROM month_actuals").query(Long.class).single()).isZero();
         }
@@ -436,11 +437,11 @@ class MarchBudgetTest {
             var store = app.getBean(MonthStore.class);
             YearMonth january = YearMonth.of(2028, 1);
             var previous = store.readYear("owner-a", 2027, january);
-            assertThat(previous.categories()).extracting(category -> category.plan().toString())
-                    .containsExactly("390000", "6000");
-            assertThat(previous.spendingPlan()).isEqualByComparingTo("396000");
+            assertThat(previous.categories()).extracting(YearReport.Category::plan)
+                    .containsExactly(BigInteger.valueOf(390000), BigInteger.valueOf(6000));
+            assertThat(previous.spendingPlan()).isEqualTo(BigInteger.valueOf(396000));
             var rollover = store.readYear("owner-a", 2028, january);
-            assertThat(rollover.spendingPlan()).isEqualByComparingTo("432000");
+            assertThat(rollover.spendingPlan()).isEqualTo(BigInteger.valueOf(432000));
             assertThat(rollover.totalBuffer()).isZero();
         }
     }
