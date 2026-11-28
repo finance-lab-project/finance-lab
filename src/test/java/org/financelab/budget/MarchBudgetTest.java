@@ -24,6 +24,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.web.csrf.DefaultCsrfToken;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -565,6 +566,44 @@ class MarchBudgetTest {
             Document otherReport = other.get("/years/2027").html();
             assertThat(otherReport.expectFirst("#year-planned-spending").text()).isEqualTo("720 000 ₽");
             assertThat(otherReport.expectFirst("#year-planned-investments").text()).isEqualTo("480 000 ₽");
+        }
+    }
+
+    @Test
+    void monthlyInvestmentPlanShowsTargetOnlyWhenFundingFallsShort() throws Exception {
+        try (var app = new SpringApplicationBuilder(FinanceLabApplication.class).profiles("demo")
+                .contextFactory(webType -> new GenericWebApplicationContext(new MockServletContext()))
+                .run("--budget.current-month=2027-03",
+                        "--spring.datasource.url=jdbc:sqlite:" + directory.resolve("budget.sqlite"),
+                        "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
+                        "--spring.main.banner-mode=off", "--logging.level.root=WARN")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            Document funded = reviewPage(mvc, MARCH);
+            assertThat(funded.select("#plan-target, #investment-shortfall")).isEmpty();
+            String investmentPlan = "dl[aria-labelledby=investment-plan-heading]";
+            assertThat(funded.select(investmentPlan + " > div > dd").eachText()).containsExactly("40 000 ₽");
+            assertThat(funded.select("#summary-heading + dl #actual-contributions").eachText())
+                    .containsExactly("10 000 ₽");
+            assertThat(funded.select("dl[aria-describedby=investment-shortfall]")).isEmpty();
+
+            Document settings = Jsoup.parse(mvc.perform(get("/settings").principal(() -> "owner-a")
+                            .requestAttr("_csrf", new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "fixture")))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+            var form = settings.expectFirst("#plan-form");
+            var draft = new PlanDraft("65000", "amount", "40000", settingsDraft(settings).rows());
+            var save = new SettingsController.Save(form.attr("data-period"), Long.parseLong(form.attr("data-revision")), draft);
+            mvc.perform(post("/settings").principal(() -> "owner-a")
+                            .contentType("application/json").content(JSON.writeValueAsString(save)))
+                    .andExpect(status().isNoContent());
+
+            Document shortfall = reviewPage(mvc, MARCH);
+            assertThat(shortfall.expectFirst("#investment-shortfall").text())
+                    .isEqualTo("После необходимых расходов до инвестиционной цели не хватает 15 000 ₽.");
+            assertThat(shortfall.select(investmentPlan + "[aria-describedby=investment-shortfall] > div > dd").eachText())
+                    .containsExactly("40 000 ₽", "25 000 ₽");
+            assertThat(shortfall.select("#summary-heading + dl #actual-contributions").eachText())
+                    .containsExactly("10 000 ₽");
+            assertThat(shortfall.select("#plan-shortfall")).isEmpty();
         }
     }
 

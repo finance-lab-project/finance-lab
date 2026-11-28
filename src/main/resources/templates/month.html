@@ -65,11 +65,14 @@
                     <div><dt>Необходимые расходы</dt><dd id="plan-needs" th:text="${@rubles.display(allocation.needs())}"></dd></div>
                     <div><dt>Свободные расходы</dt><dd id="plan-pool" th:text="${@rubles.display(allocation.pool())}"></dd></div>
                 </dl>
-                <h2 class="subheading">Инвестиции</h2>
-                <dl class="summary">
-                    <div><dt>Цель</dt><dd id="plan-target" th:text="${@rubles.display(allocation.target())}"></dd></div>
+                <h2 class="subheading" id="investment-plan-heading">Инвестиции</h2>
+                <dl class="summary" aria-labelledby="investment-plan-heading"
+                    th:attr="aria-describedby=${allocation.target() > allocation.investments() ? 'investment-shortfall' : null}">
+                    <div th:if="${allocation.target() > allocation.investments()}"><dt>Цель</dt><dd id="plan-target" th:text="${@rubles.display(allocation.target())}"></dd></div>
                     <div><dt>По плану</dt><dd id="plan-investments" th:text="${@rubles.display(allocation.investments())}"></dd></div>
                 </dl>
+                <p th:if="${allocation.target() > allocation.investments()}" class="notice" id="investment-shortfall"
+                   th:text="|После необходимых расходов до инвестиционной цели не хватает ${@rubles.display(allocation.target() - allocation.investments())}.|"></p>
                 <p th:if="${allocation.shortfall().signum() > 0}" class="notice error" id="plan-shortfall"
                    th:text="|На необходимые расходы не хватает ${@rubles.display(allocation.shortfall())}.|"></p>
             </section>
