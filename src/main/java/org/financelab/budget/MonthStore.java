@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -74,10 +75,11 @@ class MonthStore {
 
         var months = new ArrayList<YearReport.Month>(12);
         var categories = new LinkedHashMap<String, YearReport.Category>();
+        var rates = new LinkedHashMap<String, Long>();
         var totals = YearReport.Actuals.ZERO;
         var completedTotals = YearReport.Actuals.ZERO;
-        BigInteger spendingPlan = BigInteger.ZERO;
         BigInteger investmentPlan = BigInteger.ZERO;
+        int firstSettingsMonth = 12;
         for (int index = 0; index < 12; index++) {
             YearMonth month = january.plusMonths(index);
             MonthBudget budget = read(owner, month, current, false);
@@ -86,13 +88,27 @@ class MonthStore {
             totals = totals.plus(actuals);
             boolean completed = index < completedMonths;
             if (completed) completedTotals = completedTotals.plus(actuals);
-            spendingPlan = spendingPlan.add(budget.totalPlan());
             if (budget.terms() != null) {
+                firstSettingsMonth = Math.min(firstSettingsMonth, index);
                 investmentPlan = investmentPlan.add(BigInteger.valueOf(budget.allocation().investments()));
             }
             for (var row : budget.categories()) {
                 var category = categories.computeIfAbsent(row.code(), code -> YearReport.Category.empty(code, row.name()));
+                // The initial history can be incomplete. Later settings snapshots establish when a category was added.
+                if (rates.put(row.code(), row.plan()) == null && index <= firstSettingsMonth) {
+                    category = category.withPlan(BigInteger.valueOf(row.plan()).multiply(BigInteger.valueOf(index)));
+                }
                 categories.put(row.code(), category.withMonth(row, completed));
+            }
+            if (budget.terms() == null) {
+                // With monthly history alone, the last recorded rate applies until the next one appears.
+                var observed = budget.categories().stream().map(MonthBudget.Category::code)
+                        .collect(Collectors.toSet());
+                rates.forEach((code, rate) -> {
+                    if (!observed.contains(code)) {
+                        categories.put(code, categories.get(code).withPlan(BigInteger.valueOf(rate)));
+                    }
+                });
             }
         }
 
@@ -108,6 +124,8 @@ class MonthStore {
             var balance = BigInteger.valueOf(rs.getLong("plan")).subtract(BigInteger.valueOf(rs.getLong("actual")));
             categories.put(code, category.withBalance(balance));
         });
+        BigInteger spendingPlan = categories.values().stream().map(YearReport.Category::plan)
+                .reduce(BigInteger.ZERO, BigInteger::add);
         return new YearReport(year, cutoff, completedMonths, List.copyOf(months), totals, completedTotals,
                 spendingPlan, investmentPlan, List.copyOf(categories.values()));
     }

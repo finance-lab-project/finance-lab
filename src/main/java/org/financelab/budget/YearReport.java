@@ -38,6 +38,10 @@ record YearReport(int year, YearMonth cutoff, int completedMonths, List<Month> m
         Category withBalance(BigInteger balance) {
             return new Category(code, name, plan, actual, completedActual, buffer.add(balance));
         }
+
+        Category withPlan(BigInteger amount) {
+            return new Category(code, name, plan.add(amount), actual, completedActual, buffer);
+        }
     }
 
     public BigInteger totalBuffer() {

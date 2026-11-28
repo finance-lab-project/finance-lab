@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -386,6 +387,61 @@ class MarchBudgetTest {
             assertThat(report.select("#row-food td").eachText())
                     .containsExactly("288 000 ₽", "73 000 ₽", "24 000 ₽", "−2 000 ₽");
             assertThat(other.get(path).html().expectFirst("#year-spending").text()).isEqualTo("131 000 ₽");
+        }
+    }
+
+    @Test
+    void yearProjectsSparseMonthlyRatesWithoutRecordingMissingMonths() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2027-11', 'food', 30000, 25000),
+                        ('owner-a', '2027-12', 'food', 30000, 27000),
+                        ('owner-b', '2027-01', 'food', 30000, 0),
+                        ('owner-b', '2027-07', 'food', 35000, 0)
+                    """).update();
+            var store = app.getBean(MonthStore.class);
+            YearMonth january = YearMonth.of(2028, 1);
+            var late = store.readYear("owner-a", 2027, january);
+            assertThat(late.spendingPlan()).isEqualByComparingTo("360000");
+            assertThat(late.categories()).singleElement().satisfies(category -> {
+                assertThat(category.plan()).isEqualTo(late.spendingPlan());
+                assertThat(category.actual()).isEqualByComparingTo("52000");
+                assertThat(category.buffer()).isEqualByComparingTo("8000");
+            });
+            assertThat(late.months().getFirst().actuals()).isEqualTo(YearReport.Actuals.ZERO);
+            assertThat(store.readYear("owner-b", 2027, january).spendingPlan()).isEqualByComparingTo("390000");
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Long.class).single()).isEqualTo(4L);
+            assertThat(jdbc.sql("SELECT count(*) FROM month_actuals").query(Long.class).single()).isZero();
+        }
+    }
+
+    @Test
+    void yearUsesEffectiveSettingsAndRespectsCategoryInception() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings (owner, since, income, target, revision) VALUES
+                        ('owner-a', '2027-03', 100000, '2/5', 1),
+                        ('owner-a', '2027-07', 100000, '2/5', 2)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category (owner, since, category, name, kind, addition_order, unit, value, plan)
+                    VALUES
+                        ('owner-a', '2027-03', 'food', 'Продукты', 'essential', 1, 'amount', '30000', 30000),
+                        ('owner-a', '2027-07', 'food', 'Продукты', 'essential', 1, 'amount', '35000', 35000),
+                        ('owner-a', '2027-07', 'health', 'Здоровье', 'essential', 2, 'amount', '1000', 1000)
+                    """).update();
+            var store = app.getBean(MonthStore.class);
+            YearMonth january = YearMonth.of(2028, 1);
+            var previous = store.readYear("owner-a", 2027, january);
+            assertThat(previous.categories()).extracting(category -> category.plan().toString())
+                    .containsExactly("390000", "6000");
+            assertThat(previous.spendingPlan()).isEqualByComparingTo("396000");
+            var rollover = store.readYear("owner-a", 2028, january);
+            assertThat(rollover.spendingPlan()).isEqualByComparingTo("432000");
+            assertThat(rollover.totalBuffer()).isZero();
         }
     }
 
