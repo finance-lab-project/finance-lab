@@ -68,6 +68,45 @@ class MarchBudgetTest {
     }
 
     @Test
+    void reopensAfterSavingHistoricalActualsWhoseSumExceedsLongRange() throws Exception {
+        List<String> periods = List.of("2026-01", "2026-02");
+        String planningValue = """
+                SELECT value FROM planning_category
+                 WHERE owner = ? AND since = '2027-01' AND category = 'food'
+                """;
+        try (var app = start()) {
+            var owner = signedIn(app, "owner-a");
+            for (String period : periods) {
+                var history = owner.get("/history/" + period).html();
+                assertThat(owner.saveHistory(history, Map.of("amount-food", Long.toString(Long.MAX_VALUE))).status())
+                        .isEqualTo(302);
+            }
+            var jdbc = app.getBean(JdbcClient.class);
+            assertThat(jdbc.sql(planningValue).param("owner-a").query(String.class).single())
+                    .isEqualTo("288000");
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    SELECT 'legacy-owner', period, category, plan, actual FROM category_month
+                     WHERE owner = 'owner-a' AND category = 'food' AND period <= '2027-01'
+                    """).update();
+        }
+        try (var reopened = start()) {
+            var jdbc = reopened.getBean(JdbcClient.class);
+            assertThat(jdbc.sql(planningValue).param("owner-a").query(String.class).single())
+                    .isEqualTo("288000");
+            assertThat(jdbc.sql(planningValue).param("legacy-owner").query(String.class).single())
+                    .isEqualTo("18446744073709791614");
+            var owner = signedIn(reopened, "owner-a");
+            for (String period : periods) {
+                var month = owner.get("/months/" + period);
+                assertThat(month.status()).isEqualTo(200);
+                assertThat(month.html().expectFirst("#row-food .actual").text())
+                        .isEqualTo("9 223 372 036 854 775 807 ₽");
+            }
+        }
+    }
+
+    @Test
     void sessionsUseCookiesAndLogoutRequiresCsrf() throws Exception {
         try (var app = startPilot("synthetic-session-password")) {
             var web = (WebApplicationContext) app;
