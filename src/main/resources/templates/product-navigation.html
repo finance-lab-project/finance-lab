@@ -1,0 +1,7 @@
+<nav xmlns:th="http://www.thymeleaf.org" th:fragment="sections(area, budgetUrl)"
+     class="product-nav" aria-label="Разделы Finance Lab">
+    <a class="nav-link" th:href="${budgetUrl}" th:attr="aria-current=${area == 'budget' ? 'location' : null}">Бюджет</a>
+    <a class="nav-link" th:href="${area == 'investments'} ? @{/investments/{p}(p=${period})} : @{/investments}"
+       th:attr="aria-current=${area == 'investments' ? 'page' : null}">Инвестиции</a>
+    <a class="nav-link" th:href="@{/fire}" th:attr="aria-current=${area == 'fire' ? 'page' : null}">FIRE</a>
+</nav>

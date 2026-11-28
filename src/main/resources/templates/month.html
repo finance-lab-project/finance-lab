@@ -13,14 +13,14 @@
     <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
 </header>
 <div class="layout">
-    <aside aria-label="Разделы Finance Lab">
-        <strong>Бюджет</strong>
-        <span class="selected" aria-current="page">Месяц</span>
-        <a class="nav-link" data-year-report th:href="@{/years/{y}(y=${period.year})}">Итоги</a>
-        <a class="nav-link" th:href="@{/settings}">Настройки</a>
-        <a class="nav-link" th:href="@{/history/{p}(p=${historyPeriod})}">Ввод истории</a>
-        <a class="nav-link" th:href="@{/investments}">Инвестиции</a>
-        <a class="nav-link" th:href="@{/fire}">FIRE</a>
+    <aside>
+        <nav th:replace="~{product-navigation :: sections('budget', @{/months/{p}(p=${period})})}"></nav>
+        <nav class="budget-nav" aria-label="Страницы бюджета">
+            <span class="selected" aria-current="page">Месяц</span>
+            <a class="nav-link" data-year-report th:href="@{/years/{y}(y=${period.year})}">Итоги</a>
+            <a class="nav-link" th:href="@{/settings}">Настройки</a>
+            <a class="nav-link" th:href="@{/history/{p}(p=${historyPeriod})}">Ввод истории</a>
+        </nav>
     </aside>
     <main id="month">
         <div class="period-bar">
