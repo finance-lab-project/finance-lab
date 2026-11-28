@@ -1138,7 +1138,7 @@ class MarchBudgetTest {
             jdbc.sql("""
                     INSERT INTO planning_settings VALUES
                         ('owner-a', '2027-01', 30000, '0/1', 1),
-                        ('owner-a', '2028-01', 30000, '0/1', 2)
+                        ('owner-a', '2028-01', 30000, '0/1', 3)
                     """).update();
             jdbc.sql("""
                     INSERT INTO planning_category VALUES

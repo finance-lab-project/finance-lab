@@ -78,6 +78,12 @@ CREATE TABLE IF NOT EXISTS planning_category (
     FOREIGN KEY (owner, since) REFERENCES planning_settings(owner, since)
 ) STRICT;
 
+-- The legacy inference is needed only when migrating a database that predates the markers.
+CREATE TEMP TABLE migrate_legacy_rollover AS
+SELECT 1 WHERE NOT EXISTS (
+    SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'planning_category_rollover_copy'
+);
+
 CREATE TABLE IF NOT EXISTS planning_category_rollover_copy (
     owner TEXT NOT NULL,
     since TEXT NOT NULL,
@@ -95,7 +101,18 @@ SELECT p.owner, p.since, p.category FROM planning_category p
       SELECT max(since) FROM planning_settings WHERE owner = p.owner AND since < p.since
   )
   JOIN planning_category old ON old.owner = prev.owner AND old.since = prev.since AND old.category = p.category
- WHERE substr(p.since, 6, 2) = '01' AND jan.revision = prev.revision + 1
+ WHERE EXISTS (SELECT 1 FROM migrate_legacy_rollover) AND substr(p.since, 6, 2) = '01'
+   AND (jan.revision = prev.revision + 1 OR (
+       jan.revision = prev.revision + 2 AND EXISTS (
+           SELECT 1 FROM category_month m WHERE m.owner = p.owner AND m.period = p.since
+             AND m.category = p.category AND m.plan = p.plan AND m.plan <> 0
+       ) AND (old.kind <> 'essential' OR NOT EXISTS (
+           SELECT 1 FROM category_month m WHERE m.owner = p.owner AND m.category = p.category
+             AND m.period >= strftime('%Y-%m', p.since || '-01', '-1 year') AND m.period < p.since
+             AND (m.actual <> 0 OR m.revision > 0)
+       ))
+   ))
+   AND old.kind = p.kind AND old.unit = p.unit AND old.value = p.value
    AND jan.income = prev.income AND jan.target = prev.target AND old.plan = p.plan
    AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = p.owner
                     AND m.period = p.since AND m.category = p.category
@@ -105,7 +122,7 @@ ON CONFLICT DO NOTHING;
 
 -- Remove settings-only snapshots so projected rates contribute no opening buffer.
 DELETE FROM category_month
- WHERE plan <> 0 AND actual = 0 AND revision = 0
+ WHERE EXISTS (SELECT 1 FROM migrate_legacy_rollover) AND plan <> 0 AND actual = 0 AND revision = 0
    AND NOT EXISTS (SELECT 1 FROM month_actuals a
                     WHERE a.owner = category_month.owner AND a.period = category_month.period)
    AND EXISTS (
@@ -114,6 +131,8 @@ DELETE FROM category_month
         WHERE c.owner = category_month.owner AND c.since = category_month.period
           AND c.category = category_month.category AND p.plan = category_month.plan
    );
+
+DROP TABLE temp.migrate_legacy_rollover;
 
 -- A backdated history edit must preserve a category's already established start.
 CREATE TABLE IF NOT EXISTS category_plan_inception (
