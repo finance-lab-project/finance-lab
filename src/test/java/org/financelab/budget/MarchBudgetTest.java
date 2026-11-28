@@ -421,6 +421,26 @@ class MarchBudgetTest {
     }
 
     @Test
+    void historicalAveragesKeepDecemberCutoffAfterJanuary() throws Exception {
+        try (var app = startReportTest("demo", "2028-02")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO month_actuals (owner, period, income, contributions, revision)
+                    VALUES ('owner-a', '2028-01', 900000, 90000, 1)
+                    """).update();
+
+            Document current = reviewPage(mvc, "/years/2028");
+            assertThat(current.expectFirst("#average-period").text()).isEqualTo("Февраль 2027 — Январь 2028");
+            assertThat(current.expectFirst("#average-income").text()).isEqualTo("350 667 ₽ 3 из 12 мес.");
+
+            Document previous = reviewPage(mvc, "/years/2027");
+            assertThat(previous.expectFirst("#average-period").text()).isEqualTo("Январь 2027 — Декабрь 2027");
+            assertThat(previous.expectFirst("#average-income").text()).isEqualTo("83 333 ₽ 3 из 12 мес.");
+            assertThat(previous.expectFirst("#average-contributions").text()).isEqualTo("30 000 ₽ 3 из 12 мес.");
+        }
+    }
+
+    @Test
     void rollingAveragesIncludeRecordedZeroesAndExcludeGapsAndLegacyDefaults() throws Exception {
         try (var app = startReportTest("fixture", "2026-11")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
@@ -493,6 +513,8 @@ class MarchBudgetTest {
                     .param("income", "").param("contributions", "").param("plan-food", "10000"))
                     .andExpect(status().isFound());
             assertThat(reviewPage(mvc, "/history/2026-07").expectFirst("#plan-food").val()).isEqualTo("10 000");
+            assertThat(reviewPage(mvc, "/investments/2026-07").expectFirst("#budget-contributions").text())
+                    .isEqualTo("Нет записи в бюджете");
             updated = reviewPage(mvc, "/years/2026");
             assertThat(updated.expectFirst("#average-income").text()).isEqualTo("30 000 ₽ 4 из 12 мес.");
             assertThat(updated.expectFirst("#average-contributions").text()).isEqualTo("3 000 ₽ 4 из 12 мес.");
@@ -514,6 +536,8 @@ class MarchBudgetTest {
                     .param("planRevision", planOnly.expectFirst("input[name=planRevision]").val())
                     .param("income", "").param("contributions", "0").param("plan-food", "10000"))
                     .andExpect(status().isFound());
+            assertThat(reviewPage(mvc, "/investments/2026-07").expectFirst("#budget-contributions").text())
+                    .isEqualTo("0 ₽");
             updated = reviewPage(mvc, "/years/2026");
             assertThat(updated.expectFirst("#average-income").text()).isEqualTo("24 000 ₽ 5 из 12 мес.");
             assertThat(updated.expectFirst("#average-contributions").text()).isEqualTo("2 400 ₽ 5 из 12 мес.");
