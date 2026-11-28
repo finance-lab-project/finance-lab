@@ -4,14 +4,14 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import subscription
 import worker
 
 
 def pr_case():
-    return {"number": 91, "user": {"login": worker.OWNER}, "state": "open", "head": {
+    return {"number": 91, "html_url": "https://github.com/finance-lab-project/finance-lab/pull/91", "user": {"login": worker.OWNER}, "state": "open", "head": {
         "repo": {"full_name": worker.REPO}, "sha": "a" * 40}}
 
 
@@ -82,7 +82,7 @@ class SprintTests(unittest.TestCase):
                         patch.object(worker, "ci", return_value=("passed", "")), \
                         patch.object(worker, "gh", return_value=json.dumps([review])) as gh, \
                         patch.object(worker, "record") as record:
-                    worker.advance({"number": 90}, state, lambda: None)
+                    worker.advance({"number": 90}, state, lambda: None, Mock())
                     commands = [call.args for call in gh.call_args_list]
                     self.assertEqual(any(cmd[:2] == ("pr", "merge") for cmd in commands), merge)
                     if merge:
@@ -100,10 +100,11 @@ class SprintTests(unittest.TestCase):
         with patch.object(worker, "api", side_effect=[[pr_case()], {"behind_by": 0}]), \
                 patch.object(worker, "ci", return_value=("pending", "")), \
                 patch.object(worker, "record") as record, patch.object(worker, "gh") as gh:
-            worker.advance({"number": 90}, {}, lambda: None)
+            worker.advance({"number": 90}, {}, lambda: None, Mock())
             record.assert_not_called()
             gh.assert_not_called()
 
 
 if __name__ == "__main__":
     unittest.main()
+
