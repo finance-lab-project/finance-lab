@@ -12,14 +12,8 @@
     <form th:action="@{/logout}" method="post"><button class="text-button">Выйти</button></form>
 </header>
 <div class="layout">
-    <aside aria-label="Разделы Finance Lab">
-        <strong>Бюджет</strong>
-        <a class="nav-link" th:href="@{/months/{p}(p=${period})}">Месяц</a>
-        <a class="nav-link" th:href="@{/years/{y}(y=${period.year})}">Итоги</a>
-        <a class="nav-link" th:href="@{/settings}">Настройки</a>
-        <a class="nav-link" th:href="@{/history}">Ввод истории</a>
-        <span class="selected" aria-current="page">Инвестиции</span>
-        <a class="nav-link" th:href="@{/fire}">FIRE</a>
+    <aside>
+        <nav th:replace="~{product-navigation :: sections('investments', @{/months/{p}(p=${period})})}"></nav>
     </aside>
     <main id="investments">
         <h1>Инвестиции</h1>

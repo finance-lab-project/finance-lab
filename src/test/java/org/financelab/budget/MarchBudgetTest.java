@@ -102,6 +102,40 @@ class MarchBudgetTest {
     }
 
     @Test
+    void productNavigationShowsPeerLinksAndMarksTheCurrentSectionOnDeepLinks() throws Exception {
+        try (var app = start()) {
+            var owner = signedIn(app, "owner-a");
+            var budgetPages = List.of(MARCH, "/years/2027", "/settings", "/history/2027-02");
+            var budgetLabels = List.of("Месяц", "Итоги", "Настройки", "Ввод истории");
+            var paths = List.of(MARCH, "/years/2027", "/settings", "/history/2027-02",
+                    "/investments/2027-02", "/fire");
+            for (String path : paths) {
+                var page = owner.get(path);
+                assertThat(page.status()).as(path).isEqualTo(200);
+                var html = page.html();
+                var sections = html.select("nav.product-nav > a[href]:not([tabindex])");
+                assertThat(sections.eachText()).containsExactly("Бюджет", "Инвестиции", "FIRE");
+                var currentSection = sections.select("[aria-current]");
+                assertThat(currentSection).hasSize(1);
+                int budgetPage = budgetPages.indexOf(path);
+                if (budgetPage >= 0) {
+                    assertThat(currentSection.eachText()).containsExactly("Бюджет");
+                    assertThat(currentSection.attr("aria-current")).isEqualTo("location");
+                    assertThat(html.select(".budget-nav > *").eachText()).containsExactlyElementsOf(budgetLabels);
+                    assertThat(html.select(".budget-nav [aria-current=page]").eachText())
+                            .containsExactly(budgetLabels.get(budgetPage));
+                    assertThat(sections.get(1).attr("href")).isEqualTo("/investments");
+                } else {
+                    assertThat(currentSection.attr("aria-current")).isEqualTo("page");
+                    assertThat(currentSection.attr("href")).isEqualTo(path);
+                    assertThat(html.select(".budget-nav")).isEmpty();
+                }
+                assertThat(sections.get(2).attr("href")).isEqualTo("/fire");
+            }
+        }
+    }
+
+    @Test
     void investmentMonthsKeepOwnerFiguresAndBudgetAcrossSessionsAndRestart() throws Exception {
         String february = "/investments/2027-02";
         String march = "/investments/2027-03";
@@ -111,8 +145,6 @@ class MarchBudgetTest {
             var phone = signedIn(app, "owner-a");
             assertThat(desktop.save(desktop.get(EDIT).html(), Map.of("income", "12345", "contributions", "4567"))
                     .status()).isEqualTo(302);
-            assertThat(desktop.get(MARCH).html().expectFirst("aside a[href=/investments]").text())
-                    .isEqualTo("Инвестиции");
             assertThat(desktop.get("/investments?year=2027&month=2").status()).isEqualTo(302);
 
             for (String name : List.of("Учебный вклад", "Учебный брокерский счёт")) {
