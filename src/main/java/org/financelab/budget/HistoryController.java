@@ -125,7 +125,7 @@ class HistoryController {
             boolean actualMissing = draft.getOrDefault(actualKey, "").isBlank();
             if (!row.recorded() && planMissing && actualMissing) continue;
 
-            long plan = !row.recorded() && planMissing ? 0 : MonthActuals.amount(planKey, draft, errors);
+            long plan = planMissing ? row.effectivePlan() : MonthActuals.amount(planKey, draft, errors);
             long actual = !row.recorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
             if (plan < 0) errors.put(planKey, "Плановая сумма не может быть отрицательной.");
             categories.add(new HistoricalEdit(row.code(), plan, actual, !actualMissing));

@@ -632,8 +632,10 @@ class MarchBudgetTest {
             assertThat(report.months().subList(0, 6)).extracting(YearReport.Month::actuals)
                     .containsOnly(YearReport.Actuals.ZERO);
             assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
-            assertThat(app.getBean(JdbcClient.class).sql("SELECT period FROM category_month")
+            var jdbc = app.getBean(JdbcClient.class);
+            assertThat(jdbc.sql("SELECT period FROM category_month")
                     .query(String.class).single()).isEqualTo("2027-07");
+            assertThat(jdbc.sql("SELECT count(*) FROM cash_movement").query(Long.class).single()).isZero();
 
             var store = app.getBean(MonthStore.class);
             var june = july.minusMonths(1);
@@ -645,6 +647,40 @@ class MarchBudgetTest {
             assertThat(updated.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
             assertThat(updated.categories().getFirst().actual()).isEqualTo(BigInteger.valueOf(200));
             assertThat(updated.totalBuffer()).isEqualTo(BigInteger.valueOf(800));
+        }
+    }
+
+    @Test
+    void historyFormPreservesEffectiveRateForActualOnlyEntriesAndAcceptsExplicitZero() throws Exception {
+        YearMonth july = YearMonth.of(2027, 7);
+        YearMonth october = YearMonth.of(2027, 10);
+        var draft = new PlanDraft("100000", "fraction", "0/1", List.of(
+                new PlanDraft.Row("", "Books", "essential", "amount", "1000")));
+        try (var app = start(false, july.toString())) {
+            assertThat(app.getBean(PlanStore.class).save("owner-a", july, 0, PlanCalculator.evaluate(draft))).isTrue();
+        }
+
+        try (var app = start(false, october.toString())) {
+            var owner = signedIn(app, "owner-a");
+            var store = app.getBean(MonthStore.class);
+            String code = store.readYear("owner-a", 2027, october).categories().getFirst().code();
+            String planKey = "plan-" + code;
+            String actualKey = "amount-" + code;
+            String august = "/history/2027-08";
+            var form = owner.get(august).html();
+            assertThat(form.expectFirst("#" + planKey).val()).isEmpty();
+            assertThat(owner.saveHistory(form, Map.of(actualKey, "200")).status()).isEqualTo(302);
+            var report = store.readYear("owner-a", 2027, october);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(report.categories()).singleElement().satisfies(row -> {
+                assertThat(row.plan()).isEqualTo(report.spendingPlan());
+                assertThat(row.actual()).isEqualTo(BigInteger.valueOf(200));
+            });
+
+            assertThat(owner.saveHistory(owner.get(august).html(), Map.of(planKey, "0")).status()).isEqualTo(302);
+            assertThat(owner.saveHistory(owner.get("/history/2027-09").html(),
+                    Map.of(actualKey, "100")).status()).isEqualTo(302);
+            assertThat(store.readYear("owner-a", 2027, october).spendingPlan()).isEqualTo(BigInteger.valueOf(1000));
         }
     }
 

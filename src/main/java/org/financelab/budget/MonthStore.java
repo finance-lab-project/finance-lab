@@ -20,7 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 /** Reads and replaces one owner's committed monthly figures. */
 @Repository
 class MonthStore {
-    record HistoricalCategory(String code, String name, long plan, long actual, boolean recorded) {}
+    record HistoricalCategory(String code, String name, long plan, long actual, boolean recorded, long effectivePlan) {}
     record HistoricalEdit(String code, long plan, long actual, boolean actualProvided) {}
     record History(MonthBudget.Figures figures, long planRevision, List<HistoricalCategory> categories) {
         public String percent(long amount) {
@@ -225,7 +225,8 @@ class MonthStore {
         var categories = jdbc.sql(readHistorySql)
                 .param("owner", owner).param("period", month.toString()).param("since", terms == null ? "" : terms.since())
                 .query((rs, index) -> new HistoricalCategory(rs.getString("category"), rs.getString("name"),
-                        rs.getLong("plan"), rs.getLong("actual"), rs.getBoolean("recorded"))).list();
+                        rs.getLong("plan"), rs.getLong("actual"), rs.getBoolean("recorded"),
+                        rs.getLong("effective_plan"))).list();
         return new History(figures(owner, month), terms == null ? 0 : terms.revision(), categories);
     }
 
