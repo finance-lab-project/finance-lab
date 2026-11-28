@@ -34,6 +34,7 @@ Open [the local budget](http://127.0.0.1:8080/) and sign in as `owner-a` with th
 [Wiki home](https://github.com/finance-lab-project/finance-lab/wiki) is a short guide to the demo, architecture and release process.
 
 - [Budget scope](docs/product-scope.md) and [monthly workflow with examples](docs/budget-v1-user-journey.md)
+- [Workbook acceptance map](docs/workbook-acceptance-map.md)
 - [Screen designs](docs/budget-v1-screen-sketches.md) and [prototype walkthrough](docs/budget-v1-prototype-review.md)
 - [Implementation decision](docs/implementation-approach.md) and [sprint review workflow](ops/agents/README.md)
 
