@@ -813,6 +813,27 @@ class MarchBudgetTest {
     }
 
     @Test
+    void savingDecemberSettingsPreservesLaterExplicitLegacyRates() {
+        var december = YearMonth.of(2027, 12);
+        try (var app = start(false, december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2028-01', 'food', 0, 2300),
+                        ('owner-a', '2028-07', 'food', 1000, 100)
+                    """).update();
+            var settings = new PlanDraft("100000", "fraction", "0/1", List.of(
+                    new PlanDraft.Row("food", "Food", "essential", "amount", "30000")));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", december, 0,
+                    PlanCalculator.evaluate(settings))).isTrue();
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2028, december);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(year.categories()).singleElement().satisfies(food ->
+                    assertThat(food.actual()).isEqualTo(BigInteger.valueOf(2400)));
+        }
+    }
+
+    @Test
     void januaryRolloverPreservesExplicitLegacyZero() {
         YearMonth january = YearMonth.of(2028, 1);
         try (var app = start(false, january.toString())) {

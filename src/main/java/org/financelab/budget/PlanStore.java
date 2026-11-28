@@ -149,6 +149,9 @@ class PlanStore {
                 jdbc.sql("""
                         UPDATE category_month SET plan = ?
                          WHERE owner = ? AND period > ? AND category = ? AND plan <> ?
+                           AND EXISTS (SELECT 1 FROM category_month_inherited_plan i
+                                        WHERE i.owner = category_month.owner AND i.period = category_month.period
+                                          AND i.category = category_month.category)
                         """).params(rubles, owner, since, code, rubles).update();
             }
         }
