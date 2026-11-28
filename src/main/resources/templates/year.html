@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title th:text="|Итоги за ${report.year()} год · Finance Lab|">Итоги · Finance Lab</title>
     <link rel="stylesheet" th:href="@{/budget.css}">
+    <script defer th:src="@{/period-picker.js}"></script>
 </head>
 <body>
 <header class="app-bar">
@@ -25,9 +26,11 @@
         <div class="period-bar">
             <div>
                 <h1 th:text="|Итоги за ${report.year()} год|">Итоги года</h1>
-                <form class="period-picker" th:action="@{/years}" method="get">
-                    <label>Год <input name="year" type="number" min="1" max="9999" required th:value="${report.year()}"></label>
-                    <button type="submit" class="text-button">Перейти</button>
+                <form id="period-picker" class="period-picker" th:action="@{/years}" method="get">
+                    <label>Год
+                        <input name="year" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}"
+                               required th:value="${#numbers.formatInteger(report.year(), 4)}">
+                    </label>
                 </form>
             </div>
         </div>
