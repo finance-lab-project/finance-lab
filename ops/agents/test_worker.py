@@ -4,14 +4,14 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import subscription
 import worker
 
 
 def pr_case():
-    return {"number": 91, "user": {"login": worker.OWNER}, "state": "open", "head": {
+    return {"number": 91, "html_url": "https://github.com/finance-lab-project/finance-lab/pull/91", "user": {"login": worker.OWNER}, "state": "open", "head": {
         "repo": {"full_name": worker.REPO}, "sha": "a" * 40}}
 
 
@@ -82,7 +82,7 @@ class SprintTests(unittest.TestCase):
                         patch.object(worker, "ci", return_value=("passed", "")), \
                         patch.object(worker, "gh", return_value=json.dumps([review])) as gh, \
                         patch.object(worker, "record") as record:
-                    worker.advance({"number": 90}, state, lambda: None)
+                    worker.advance({"number": 90}, state, lambda: None, Mock())
                     commands = [call.args for call in gh.call_args_list]
                     self.assertEqual(any(cmd[:2] == ("pr", "merge") for cmd in commands), merge)
                     if merge:
@@ -96,14 +96,37 @@ class SprintTests(unittest.TestCase):
                     worker.protected()
                 api.assert_called_once_with(worker.endpoint("actions/permissions/workflow"))
 
+    def test_solo_merges_require_a_pr_and_strict_verify(self):
+        checks = {"strict": True, "checks": [{"context": "verify", "app_id": 15368}]}
+        solo = {"required_approving_review_count": 0, "dismiss_stale_reviews": False}
+        team = {"required_approving_review_count": 1, "dismiss_stale_reviews": True}
+        policy = {"required_pull_request_reviews": solo, "required_status_checks": checks,
+                  "enforce_admins": {"enabled": True}}
+        for change, valid in [
+                ({}, True), ({"required_pull_request_reviews": team}, True),
+                ({"required_pull_request_reviews": None}, False),
+                ({"required_pull_request_reviews": {**team, "dismiss_stale_reviews": False}}, False),
+                ({"required_status_checks": {**checks, "strict": False}}, False),
+                ({"required_status_checks": {"strict": True, "checks": []}}, False),
+                ({"enforce_admins": {"enabled": False}}, False)]:
+            replies = [{"can_approve_pull_request_reviews": True},
+                       {"allow_auto_merge": True, "allow_squash_merge": True}, {**policy, **change}]
+            with self.subTest(change=change), patch.object(worker, "api", side_effect=replies):
+                if valid:
+                    worker.protected()
+                else:
+                    with self.assertRaises(worker.OwnerAction):
+                        worker.protected()
+
     def test_pending_ci_does_not_approve(self):
         with patch.object(worker, "api", side_effect=[[pr_case()], {"behind_by": 0}]), \
                 patch.object(worker, "ci", return_value=("pending", "")), \
                 patch.object(worker, "record") as record, patch.object(worker, "gh") as gh:
-            worker.advance({"number": 90}, {}, lambda: None)
+            worker.advance({"number": 90}, {}, lambda: None, Mock())
             record.assert_not_called()
             gh.assert_not_called()
 
 
 if __name__ == "__main__":
     unittest.main()
+

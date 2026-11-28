@@ -31,7 +31,7 @@ def configure():
         payload = {"required_status_checks": {"strict": True, "checks": [
             {"context": "verify", "app_id": 15368}]},
             "enforce_admins": True, "required_pull_request_reviews": {
-                "dismiss_stale_reviews": True, "required_approving_review_count": 1},
+                "dismiss_stale_reviews": True, "required_approving_review_count": 0},
             "restrictions": None}
         subprocess.run(["gh", "api", "-X", "PUT", endpoint("branches/main/protection"),
                         "--input", "-", "--silent"], input=json.dumps(payload), text=True, check=True)
@@ -61,7 +61,7 @@ def main():
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = ROOT / "bin"
     target.mkdir(exist_ok=True, mode=0o700)
-    for name in ["worker.py", "subscription.py"]:
+    for name in ["subscription.py", "board_status.py", "worker.py"]:
         tmp = target / (name + ".tmp")
         shutil.copyfile(source / name, tmp)
         tmp.replace(target / name)

@@ -1,0 +1,12 @@
+# Sber retail savings source assessment
+
+Reviewed 28 November 2026 (Moscow) for issue #91.
+
+| Check | Evidence |
+| --- | --- |
+| Retail product metadata | Sber's public pages list deposits and savings accounts for individuals. They show product names, advertised rates, opening amounts and terms. The savings account page explains how balance calculation and conditional bonuses affect interest. The disclosure page publishes product terms. [Retail catalogue](https://www.sberbank.ru/ru/person/contributions/deposits) · [Online deposits](https://www.sberbank.ru/ru/person/contributions/deposits/vklady-online) · [Savings account](https://www.sberbank.ru/ru/person/contributions/deposits/nakopi?tab=more) · [Disclosures](https://www.sberbank.ru/ru/inform) |
+| Integration eligibility | The retail pages are publicly readable. The documented deposit API serves corporate customers and uses SberBusiness ID. Onboarding requires a signed application for the organization. The reviewed documentation did not identify an official retail metadata feed accessible to Finance Lab. [Deposit API overview](https://developers.sber.ru/docs/ru/sber-api/scenarios/placement/deposit/overview) · [API onboarding](https://developers.sber.ru/docs/ru/sber-api/start/connection-api) |
+| Integration cost | Public product pages can be read without payment. No tariff or free-access commitment was verified for an official retail feed. The developer portal's royalty-free licence applies to its defined Open Products under its terms. [Developer portal agreement](https://developers.sber.ru/docs/ru/policies/agreement-policy) |
+| Permitted display and freshness | No published permission to extract and redisplay the retail catalogue, rates, or terms in Finance Lab was verified. The developer portal licence covers designated Open Products for their intended use. The retail pages also offer conditional rates, and no documented retail feed update schedule or freshness guarantee was verified. [Developer portal agreement](https://developers.sber.ru/docs/ru/policies/agreement-policy) · [Savings account conditions](https://www.sberbank.ru/ru/person/contributions/deposits/nakopi?tab=more) |
+
+The release uses manual entry. In **Инвестиции**, choose **Вклад** or **Накопительный счёт**, enter a name, and record the month-end balance and credited interest in rubles. The figures use the existing monthly tracking workflow. The assessment used public documentation and product pages without opening or accessing bank accounts.

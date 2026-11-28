@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.ToLongFunction;
+import org.financelab.budget.InvestmentStore.AccountKind;
 import org.financelab.budget.InvestmentStore.AccountMonth;
 import org.financelab.budget.InvestmentStore.Figures;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -54,20 +55,23 @@ class InvestmentController {
 
     @PostMapping("/{month}/accounts")
     String addAccount(Principal owner, @PathVariable @DateTimeFormat(pattern = "uuuu-MM") YearMonth month,
-                      @RequestParam(defaultValue = "") String name, Model model, HttpServletResponse response,
+                      @RequestParam(defaultValue = "") String name,
+                      @RequestParam(defaultValue = "INVESTMENT") AccountKind kind,
+                      Model model, HttpServletResponse response,
                       RedirectAttributes redirect) {
         requireValidYear(month.getYear());
         String accountName = name.strip();
         String error = null;
         if (accountName.isEmpty()) {
             error = "Введите название счёта.";
-        } else if (!store.addAccount(owner.getName(), accountName)) {
+        } else if (!store.addAccount(owner.getName(), accountName, kind)) {
             error = "Счёт с таким названием уже есть.";
         }
         if (error != null) {
             response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
             model.addAttribute("nameError", error);
             model.addAttribute("accountName", accountName);
+            model.addAttribute("selectedKind", kind);
             return view(model, owner.getName(), month, store.read(owner.getName(), month));
         }
         redirect.addFlashAttribute("accountAdded", true);
@@ -105,6 +109,7 @@ class InvestmentController {
         model.addAttribute("months", BudgetPeriod.MONTHS);
         model.addAttribute("title", BudgetPeriod.title(month));
         model.addAttribute("accounts", accounts);
+        model.addAttribute("accountKinds", AccountKind.values());
         model.addAttribute("previousTitle", BudgetPeriod.title(month.minusMonths(1)));
         boolean complete = !accounts.isEmpty() && accounts.stream().allMatch(account -> account.figures() != null);
         boolean previousComplete = !accounts.isEmpty() && accounts.stream().allMatch(account -> account.previousValue() != null);

@@ -43,13 +43,13 @@ class HistoryController {
         }
         response.setStatus(HttpStatus.BAD_REQUEST.value());
         model.addAttribute("periodError", true);
-        return view(model, latest, store.readHistory(owner.getName(), latest));
+        return view(model, owner.getName(), latest, store.readHistory(owner.getName(), latest));
     }
 
     @GetMapping("/{month}")
     String history(Principal owner, @PathVariable @DateTimeFormat(pattern = "uuuu-MM") YearMonth month, Model model) {
         requirePast(month);
-        return view(model, month, store.readHistory(owner.getName(), month));
+        return view(model, owner.getName(), month, store.readHistory(owner.getName(), month));
     }
 
     @PostMapping("/{month}")
@@ -65,13 +65,14 @@ class HistoryController {
             Long income = MonthActuals.figure("income", saved.figures().incomeRecorded(), draft, errors);
             Long contributions = MonthActuals.figure("contributions", saved.figures().contributionsRecorded(), draft, errors);
             List<HistoricalEdit> categories = parseCategories(saved, draft, errors);
+            var correction = MonthActuals.correctionDate(month, store.reconciliationDate(owner), draft, errors);
             if (!errors.isEmpty()) {
                 response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
                 model.addAttribute("draft", draft);
                 model.addAttribute("errors", errors);
-                return view(model, month, saved);
+                return view(model, owner, month, saved);
             }
-            if (store.replaceHistory(owner, month, saved, income, contributions, categories)) {
+            if (store.replaceHistory(owner, month, saved, income, contributions, categories, correction)) {
                 redirect.addFlashAttribute("saved", true);
                 return "redirect:/history/" + month;
             }
@@ -82,7 +83,7 @@ class HistoryController {
         response.setStatus(HttpStatus.CONFLICT.value());
         model.addAttribute("draft", draft);
         model.addAttribute("conflict", true);
-        return view(model, month, saved);
+        return view(model, owner, month, saved);
     }
 
     private void requirePast(YearMonth month) {
@@ -91,7 +92,8 @@ class HistoryController {
         }
     }
 
-    private String view(Model model, YearMonth month, History saved) {
+    private String view(Model model, String owner, YearMonth month, History saved) {
+        model.addAttribute("cashReferenceDate", store.reconciliationDate(owner));
         var original = savedFields(saved);
         model.addAttribute("original", original);
         model.mergeAttributes(Map.of("draft", original, "errors", Map.of()));

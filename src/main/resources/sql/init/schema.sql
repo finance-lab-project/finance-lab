@@ -72,6 +72,11 @@ CREATE TABLE IF NOT EXISTS investment_account (
     UNIQUE (owner, name)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS savings_product (
+    account_id INTEGER PRIMARY KEY REFERENCES investment_account(id),
+    kind TEXT NOT NULL CHECK (kind IN ('DEPOSIT', 'SAVINGS'))
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS investment_month (
     account_id INTEGER NOT NULL REFERENCES investment_account(id),
     period TEXT NOT NULL,
@@ -90,3 +95,19 @@ CREATE TABLE IF NOT EXISTS fire_goal (
 CREATE TABLE IF NOT EXISTS fire_account (
     account_id INTEGER PRIMARY KEY REFERENCES investment_account(id)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS cash_reconciliation (
+    owner TEXT PRIMARY KEY,
+    reference_date TEXT NOT NULL,
+    card_balance INTEGER NOT NULL,
+    later_movement TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS cash_movement (
+    owner TEXT NOT NULL,
+    period TEXT NOT NULL,
+    effective_date TEXT NOT NULL,
+    amount TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS cash_movement_lookup ON cash_movement (owner, period, effective_date);
