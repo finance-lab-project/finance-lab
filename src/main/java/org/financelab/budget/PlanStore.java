@@ -128,9 +128,10 @@ class PlanStore {
     private void saveCategories(String owner, String since, PlanCalculator.Preview plan,
                                 boolean recordMonth, boolean refreshInherited) {
         PlanDraft draft = plan.draft();
-        Map<String, Long> previousRates = new HashMap<>();
+        record Rate(String group, String unit, String value, long amount) {}
+        Map<String, Rate> previousRates = new HashMap<>();
         jdbc.sql("""
-                SELECT p.category, p.plan FROM planning_category p
+                SELECT p.category, p.kind, p.unit, p.value, p.plan FROM planning_category p
                  WHERE p.owner = :owner AND p.since = (
                      SELECT max(since) FROM planning_category WHERE owner = :owner AND since <= :since
                  ) AND ((p.since < :since AND NOT :recordMonth) OR EXISTS (
@@ -138,7 +139,10 @@ class PlanStore {
                        AND c.since = p.since AND c.category = p.category
                  ) AND p.since = :since)
                 """).param("owner", owner).param("since", since).param("recordMonth", recordMonth)
-                .query(rs -> { previousRates.put(rs.getString("category"), rs.getLong("plan")); });
+                .query(rs -> {
+                    var rate = new Rate(rs.getString("kind"), rs.getString("unit"), rs.getString("value"), rs.getLong("plan"));
+                    previousRates.put(rs.getString("category"), rate);
+                });
         jdbc.sql("DELETE FROM planning_category WHERE owner = ? AND since = ?").params(owner, since).update();
         for (int i = 0; i < draft.rows().size(); i++) {
             PlanDraft.Row row = draft.rows().get(i);
@@ -156,7 +160,7 @@ class PlanStore {
                     INSERT INTO planning_category (owner, since, category, name, kind, addition_order, unit, value, plan)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """).params(owner, since, code, row.name().strip(), row.group(), i + 1, row.unit(), row.value(), rubles).update();
-            boolean rolloverCopy = Long.valueOf(rubles).equals(previousRates.get(code));
+            boolean rolloverCopy = new Rate(row.group(), row.unit(), row.value(), rubles).equals(previousRates.get(code));
             if (rolloverCopy) {
                 jdbc.sql("INSERT INTO planning_category_rollover_copy (owner, since, category) VALUES (?, ?, ?)")
                         .params(owner, since, code).update();

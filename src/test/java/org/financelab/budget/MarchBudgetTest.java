@@ -1121,6 +1121,16 @@ class MarchBudgetTest {
 
             settings = plans.read("owner-a", january);
             var draft = settings.draft();
+            var fixed = new PlanDraft(draft.income(), draft.targetUnit(), draft.targetValue(),
+                    List.of(new PlanDraft.Row("leisure", "Leisure", "essential", "amount", "30000")));
+            var fixedPlan = PlanCalculator.evaluate(fixed);
+            assertThat(fixedPlan.error()).isNull();
+            assertThat(plans.save("owner-a", january, settings.revision(), fixedPlan)).isTrue();
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(30000));
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+
+            settings = plans.read("owner-a", january);
+            draft = settings.draft();
             var changed = new PlanDraft(draft.income(), draft.targetUnit(), draft.targetValue(),
                     List.of(draft.rows().getFirst().withValue("amount", "28000")));
             assertThat(plans.save("owner-a", january, settings.revision(), PlanCalculator.evaluate(changed))).isTrue();
