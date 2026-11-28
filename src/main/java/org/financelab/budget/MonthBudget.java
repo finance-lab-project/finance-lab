@@ -66,7 +66,7 @@ public record MonthBudget(@Nullable Terms terms, Figures figures, List<Category>
      * @param actual saved cumulative spending in whole rubles
      * @param buffer balance carried from earlier months, in whole rubles
      */
-    public record Category(String code, String name, String group, long plan, long actual, long buffer) {
+    public record Category(String code, String name, String group, long plan, long actual, BigInteger buffer) {
         /**
          * Creates a saved category row.
          * @param code stable category identifier
@@ -89,7 +89,7 @@ public record MonthBudget(@Nullable Terms terms, Figures figures, List<Category>
 
         /** {@return the remaining amount including the opening buffer, in whole rubles} */
         public BigInteger available() {
-            return remainder().add(BigInteger.valueOf(buffer));
+            return remainder().add(buffer);
         }
     }
 }

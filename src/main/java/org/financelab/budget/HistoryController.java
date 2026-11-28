@@ -62,8 +62,8 @@ class HistoryController {
         var draft = new HashMap<>(fields);
         var errors = new HashMap<String, String>();
         if (revision == saved.figures().revision() && planRevision == saved.planRevision()) {
-            long income = MonthActuals.amount("income", draft, errors);
-            long contributions = MonthActuals.amount("contributions", draft, errors);
+            long income = Rubles.parseField("income", draft, errors);
+            long contributions = Rubles.parseField("contributions", draft, errors);
             List<HistoricalEdit> categories = parseCategories(saved, draft, errors);
             if (!errors.isEmpty()) {
                 response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
@@ -123,8 +123,8 @@ class HistoryController {
             boolean actualMissing = draft.getOrDefault(actualKey, "").isBlank();
             if (!row.recorded() && planMissing && actualMissing) continue;
 
-            long plan = !row.recorded() && planMissing ? 0 : MonthActuals.amount(planKey, draft, errors);
-            long actual = !row.recorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
+            long plan = !row.recorded() && planMissing ? 0 : Rubles.parseField(planKey, draft, errors);
+            long actual = !row.recorded() && actualMissing ? 0 : Rubles.parseField(actualKey, draft, errors);
             if (plan < 0) errors.put(planKey, "Плановая сумма не может быть отрицательной.");
             categories.add(new HistoricalEdit(row.code(), plan, actual, !actualMissing));
         }

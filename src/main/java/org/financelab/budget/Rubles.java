@@ -3,6 +3,7 @@ package org.financelab.budget;
 import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -35,6 +36,15 @@ public class Rubles {
             return new BigDecimal(value.replace(" ", "").replace(',', '.')).longValueExact();
         } catch (ArithmeticException e) {
             throw new IllegalArgumentException("Сумма слишком велика. Уменьшите её и попробуйте снова.");
+        }
+    }
+
+    static long parseField(String key, Map<String, String> draft, Map<String, String> errors) {
+        try {
+            return parse(draft.get(key));
+        } catch (IllegalArgumentException invalid) {
+            errors.put(key, invalid.getMessage());
+            return 0;
         }
     }
 

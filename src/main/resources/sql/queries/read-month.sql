@@ -14,8 +14,4 @@ WITH settings_categories AS (
      WHERE m.owner = :owner AND m.period = :period
        AND NOT EXISTS (SELECT 1 FROM settings_categories s WHERE s.category = m.category)
 )
-SELECT r.*, CASE WHEN :withBuffer THEN
-                 (SELECT coalesce(sum(h.plan - h.actual), 0) FROM category_month h
-                   WHERE h.owner = :owner AND h.category = r.category AND h.period < :cutoff)
-               ELSE 0 END AS opening_buffer
-  FROM rows r ORDER BY r.addition_order;
+SELECT r.* FROM rows r ORDER BY r.addition_order;
