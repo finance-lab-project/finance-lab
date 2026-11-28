@@ -20,8 +20,8 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
     // Only the last edited member of a linked pair is authoritative. A displayed,
     // rounded percentage must never change a ruble amount on an unrelated edit.
     static MonthActuals parse(MonthBudget month, Map<String, String> draft, Map<String, String> errors) {
-        long income = amount("income", draft, errors);
-        long contributions = amount("contributions", draft, errors);
+        long income = Rubles.parseField("income", draft, errors);
+        long contributions = Rubles.parseField("contributions", draft, errors);
         Map<String, Long> spending = new HashMap<>();
         for (var row : month.categories()) {
             String amountKey = "amount-" + row.code();
@@ -36,21 +36,12 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
                     draft.put(amountKey, "");
                 }
             } else {
-                long value = amount(amountKey, draft, errors);
+                long value = Rubles.parseField(amountKey, draft, errors);
                 spending.put(row.code(), value);
                 draft.put(percentKey, errors.containsKey(amountKey) ? "" : month.percent(value));
             }
         }
         return new MonthActuals(income, contributions, spending);
-    }
-
-    static long amount(String key, Map<String, String> draft, Map<String, String> errors) {
-        try {
-            return Rubles.parse(draft.get(key));
-        } catch (IllegalArgumentException invalid) {
-            errors.put(key, invalid.getMessage());
-            return 0;
-        }
     }
 
     static long fromPercent(String text, long planningIncome) {

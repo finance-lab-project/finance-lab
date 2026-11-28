@@ -8,6 +8,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -17,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** Reads and replaces one owner's committed monthly figures. */
 @Repository
 class MonthStore {
+    private record BufferCategory(String code, String name) {}
+
     record HistoricalCategory(String code, String name, long plan, long actual, boolean recorded) {}
     record HistoricalEdit(String code, long plan, long actual, boolean actualProvided) {}
     record History(MonthBudget.Figures figures, long planRevision, List<HistoricalCategory> categories) {
@@ -51,15 +54,18 @@ class MonthStore {
     private MonthBudget read(String owner, YearMonth month, YearMonth current, boolean withBuffer) {
         var terms = plans.terms(owner, month);
         var catalogue = month.isBefore(current) ? plans.terms(owner, current) : terms;
+        var buffers = new LinkedHashMap<String, BigInteger>();
+        if (withBuffer) {
+            openingBuffers(owner, month.isBefore(current) ? month : current)
+                    .forEach((category, balance) -> buffers.put(category.code(), balance));
+        }
         var categories = jdbc.sql(readMonthSql)
                 .param("owner", owner).param("period", month.toString())
                 .param("since", terms == null ? "" : terms.since())
                 .param("catalogueSince", catalogue == null ? "" : catalogue.since())
-                .param("withBuffer", withBuffer)
-                .param("cutoff", (month.isBefore(current) ? month : current).toString())
                 .query((rs, index) -> new MonthBudget.Category(rs.getString("category"), rs.getString("name"),
                         rs.getString("kind"), rs.getLong("plan"), rs.getLong("actual"),
-                        rs.getLong("opening_buffer")))
+                        buffers.getOrDefault(rs.getString("category"), BigInteger.ZERO)))
                 .list();
         return new MonthBudget(terms, figures(owner, month), categories);
     }
@@ -96,20 +102,26 @@ class MonthStore {
             }
         }
 
-        // Carry only recorded plans forward, including records from earlier years.
+        openingBuffers(owner, cutoff).forEach((key, balance) -> {
+            var category = categories.computeIfAbsent(key.code(), code -> YearReport.Category.empty(code, key.name()));
+            categories.put(key.code(), category.withBalance(balance));
+        });
+        return new YearReport(year, cutoff, completedMonths, List.copyOf(months), totals, completedTotals,
+                spendingPlan, investmentPlan, List.copyOf(categories.values()));
+    }
+
+    private Map<BufferCategory, BigInteger> openingBuffers(String owner, YearMonth cutoff) {
+        var buffers = new LinkedHashMap<BufferCategory, BigInteger>();
         jdbc.sql("""
                 SELECT m.category, c.name, m.plan, m.actual
                   FROM category_month m JOIN category c ON c.code = m.category
                  WHERE m.owner = ? AND m.period < ?
                 """).params(owner, cutoff.toString()).query(rs -> {
-            String code = rs.getString("category");
-            String name = rs.getString("name");
-            var category = categories.computeIfAbsent(code, key -> YearReport.Category.empty(key, name));
+            var category = new BufferCategory(rs.getString("category"), rs.getString("name"));
             var balance = BigInteger.valueOf(rs.getLong("plan")).subtract(BigInteger.valueOf(rs.getLong("actual")));
-            categories.put(code, category.withBalance(balance));
+            buffers.merge(category, balance, BigInteger::add);
         });
-        return new YearReport(year, cutoff, completedMonths, List.copyOf(months), totals, completedTotals,
-                spendingPlan, investmentPlan, List.copyOf(categories.values()));
+        return buffers;
     }
 
     @Transactional

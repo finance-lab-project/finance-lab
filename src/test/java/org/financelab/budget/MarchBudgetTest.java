@@ -1,5 +1,6 @@
 package org.financelab.budget;
 
+import jakarta.servlet.SessionTrackingMode;
 import java.io.IOException;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -28,6 +29,7 @@ import org.springframework.mock.web.MockServletContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.GenericWebApplicationContext;
 import tools.jackson.databind.ObjectMapper;
 
@@ -41,6 +43,47 @@ class MarchBudgetTest {
     private static final String MARCH = "/months/2027-03";
     private static final String EDIT = MARCH + "?edit=true";
     @TempDir Path directory;
+
+    @Test
+    void openingBufferCanExceedTheRangeOfASingleSavedAmount() throws Exception {
+        try (var app = start(true)) {
+            var jdbc = app.getBean(JdbcClient.class);
+            for (String month : List.of("2027-01", "2027-02")) {
+                jdbc.sql("""
+                        INSERT INTO category_month (owner, period, category, plan, actual)
+                        VALUES ('owner-a', ?, 'food', ?, 0)
+                        ON CONFLICT (owner, period, category) DO UPDATE SET plan = excluded.plan, actual = 0
+                        """).param(month).param(Long.MAX_VALUE).update();
+            }
+            var owner = signedIn(app, "owner-a");
+            var march = owner.get(MARCH);
+            assertThat(march.status()).isEqualTo(200);
+            String expected = "18 446 744 073 709 551 614 ₽";
+            assertThat(march.html().expectFirst("#row-food .buffer").text()).isEqualTo(expected);
+            var year = owner.get("/years/2027");
+            assertThat(year.status()).isEqualTo(200);
+            assertThat(year.html().expectFirst("#row-food .buffer").text()).isEqualTo(expected);
+        }
+    }
+
+    @Test
+    void sessionsUseCookiesAndLogoutRequiresCsrf() throws Exception {
+        try (var app = startPilot("synthetic-session-password")) {
+            var web = (WebApplicationContext) app;
+            assertThat(web.getServletContext().getEffectiveSessionTrackingModes())
+                    .containsExactly(SessionTrackingMode.COOKIE);
+
+            var browser = new Browser(app);
+            browser.login("pilot-owner", "synthetic-session-password");
+            var month = browser.get(MARCH);
+            assertThat(month.status()).isEqualTo(200);
+            assertThat(browser.post("/logout", Map.of()).status()).isEqualTo(403);
+            assertThat(browser.get(MARCH).status()).isEqualTo(200);
+            var logout = month.html().expectFirst("form[action=\"/logout\"]");
+            assertThat(browser.postForm(logout, Map.of()).status()).isEqualTo(302);
+            assertThat(browser.get(MARCH).status()).isEqualTo(302);
+        }
+    }
 
     @Test
     void pilotReopensTheSameMonthFromAnotherSessionAndAfterCredentialRotation() throws Exception {

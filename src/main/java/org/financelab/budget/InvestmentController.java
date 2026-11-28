@@ -80,8 +80,8 @@ class InvestmentController {
                      Model model, HttpServletResponse response, RedirectAttributes redirect) {
         requireValidYear(month.getYear());
         var errors = new HashMap<String, String>();
-        long closingValue = MonthActuals.amount("closingValue", fields, errors);
-        long creditedIncome = MonthActuals.amount("creditedIncome", fields, errors);
+        long closingValue = Rubles.parseField("closingValue", fields, errors);
+        long creditedIncome = Rubles.parseField("creditedIncome", fields, errors);
         if (!errors.isEmpty()) {
             var accounts = store.read(owner.getName(), month);
             if (accounts.stream().noneMatch(account -> account.id() == accountId)) {

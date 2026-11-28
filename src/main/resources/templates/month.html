@@ -123,7 +123,7 @@
                         </td>
                         <td data-label="Остаток месяца" class="remainder" th:classappend="${row.remainder().signum() < 0} ? 'negative'"
                             th:text="${@rubles.display(row.remainder())}"></td>
-                        <td data-label="Буфер на начало месяца" class="buffer" th:classappend="${row.buffer() < 0} ? 'negative'"
+                        <td data-label="Буфер на начало месяца" class="buffer" th:classappend="${row.buffer().signum() < 0} ? 'negative'"
                             th:text="${@rubles.display(row.buffer())}"></td>
                         <td data-label="Доступно с учётом буфера" class="available"
                             th:classappend="${row.available().signum() < 0} ? 'negative'"
