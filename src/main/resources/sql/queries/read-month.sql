@@ -19,6 +19,14 @@
  LEFT JOIN planning_category p ON p.owner = m.owner AND p.since = :catalogueSince AND p.category = m.category
      WHERE m.owner = :owner AND m.period = :period
        AND NOT EXISTS (SELECT 1 FROM settings_categories s WHERE s.category = m.category)
+    UNION ALL
+    SELECT r.category, coalesce(p.name, c.name), coalesce(p.kind, 'essential'),
+           coalesce(p.addition_order, c.display_order), r.plan, 0, 0
+      FROM effective_rates r JOIN category c ON c.code = r.category
+ LEFT JOIN planning_category p ON p.owner = :owner AND p.since = :catalogueSince AND p.category = r.category
+     WHERE NOT EXISTS (SELECT 1 FROM settings_categories s WHERE s.category = r.category)
+       AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = :owner
+                        AND m.period = :period AND m.category = r.category)
 )
 SELECT r.*, CASE WHEN :withBuffer THEN
                  (SELECT coalesce(sum(h.plan - h.actual), 0) FROM category_month h

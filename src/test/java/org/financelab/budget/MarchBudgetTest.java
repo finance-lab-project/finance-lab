@@ -1060,6 +1060,69 @@ class MarchBudgetTest {
     }
 
     @Test
+    void januaryAlreadyOpenedBeforeUpgradeUsesDecemberOverride() {
+        YearMonth january = YearMonth.of(2028, 1);
+        try (var app = start(false, january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES
+                        ('owner-a', '2027-01', 30000, '0/1', 1),
+                        ('owner-a', '2028-01', 30000, '0/1', 2)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-01', 'leisure', 'Leisure', 'discretionary', 1, 'fraction', '1/1', 30000),
+                        ('owner-a', '2028-01', 'leisure', 'Leisure', 'discretionary', 1, 'fraction', '1/1', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-12', 'leisure', 35000, 24000)
+                    """).update();
+
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(35000));
+            var year = store.readYear("owner-a", 2028, january);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(year.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2028-01', 'leisure', 0, 0)
+                    """).update();
+            assertThat(store.read("owner-a", january).totalPlan()).isZero();
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isZero();
+        }
+    }
+
+    @Test
+    void januaryReportShowsHistoryOnlyCategoryWithoutRecordingTheProjection() {
+        YearMonth january = YearMonth.of(2028, 1);
+        try (var app = start(false, january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-12', 'food', 35000, 24000)
+                    """).update();
+
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.read("owner-a", january).categories()).singleElement().satisfies(food -> {
+                assertThat(food.code()).isEqualTo("food");
+                assertThat(food.plan()).isEqualTo(35000);
+                assertThat(food.actual()).isZero();
+                assertThat(food.actualRecorded()).isFalse();
+                assertThat(food.buffer()).isEqualTo(11000);
+            });
+            var year = store.readYear("owner-a", 2028, january);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(year.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+            assertThat(jdbc.sql("SELECT period FROM category_month").query(String.class).single()).isEqualTo("2027-12");
+            for (String table : List.of("month_actuals", "planning_category", "cash_movement")) {
+                assertThat(jdbc.sql("SELECT count(*) FROM " + table).query(Integer.class).single()).isZero();
+            }
+        }
+    }
+
+    @Test
     void yearUsesEffectiveSettingsAndRespectsCategoryInception() {
         try (var app = start(false, "2028-01")) {
             var jdbc = app.getBean(JdbcClient.class);

@@ -21,6 +21,20 @@ WITH first_settings AS (
        AND NOT EXISTS (SELECT 1 FROM monthly_rates m WHERE m.category = p.category AND m.period = p.since)
        AND NOT EXISTS (SELECT 1 FROM planning_category_rollover_copy c WHERE c.owner = p.owner
                         AND c.since = p.since AND c.category = p.category)
+       -- Older automatic January snapshots copied unchanged rates without recording a month row.
+       -- Explicit settings saves record a month row, and unmarked monthly rates are handled above.
+       AND NOT (
+           substr(p.since, 6, 2) = '01'
+           AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = p.owner
+                            AND m.period = p.since AND m.category = p.category)
+           AND EXISTS (
+               SELECT 1 FROM planning_category previous
+                WHERE previous.owner = p.owner AND previous.category = p.category AND previous.plan = p.plan
+                  AND previous.since = (
+                      SELECT max(since) FROM planning_settings WHERE owner = p.owner AND since < p.since
+                  )
+           )
+       )
 ), periods AS (
     SELECT r.*, i.start,
            row_number() OVER (PARTITION BY r.category ORDER BY r.period) AS ordinal,
