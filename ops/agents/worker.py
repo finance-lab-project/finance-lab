@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 from board_status import deliver, previous_blocker, transition
-from subscription import OwnerAction, Waiting, agent, preflight
+from subscription import OwnerAction, Waiting, agent, authenticated_cli, preflight
 
 REPO = "finance-lab-project/finance-lab"
 OWNER = "anton415"
@@ -312,12 +312,15 @@ def prepare_status(issue):
                        persist, state.get("pr_url"), number)
     elif state.get("spec") != digest:
         previous_block = bool(state.get("blocked"))
+        progress = state.get("progress", {})
         state = {"spec": digest, **{k: v for k, v in state.items() if k in ("pushing", "pr_url")}}
         if previous_block:
             transition(state, "queued", "The issue specification changed after a blocker.",
                        "The controller will check prerequisites and claim an available work slot.",
                        persist, state.get("pr_url"), number)
         else:
+            if progress.get("stage") == "queued":
+                state["progress"] = progress
             persist()
     deliver(state, persist, gh, REPO, OWNER, number)
     return state
@@ -359,12 +362,15 @@ def tick():
                 continue
             protected()
             save(active, issue["number"])
-            if not state.get("progress") or state["progress"]["stage"] in ("dependency", "queued"):
+            stage = state.get("progress", {}).get("stage")
+            if stage == "sign-in":
+                authenticated_cli()
+            if stage in (None, "dependency", "queued", "owner", "sign-in"):
                 report("working", "The product worker claimed this issue.",
                        "The worker implements the acceptance examples.")
             advance(issue, state, persist, report)
         except OwnerAction as exc:
-            report("owner", str(exc), "Maintainer: restore the reported prerequisite. The controller will recheck it.")
+            report(exc.stage, str(exc), "Maintainer: restore the reported prerequisite. The controller will recheck it.")
             raise
         except Waiting as exc:
             report("waiting", str(exc), "The controller retries on the next poll.")

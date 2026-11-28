@@ -15,6 +15,12 @@ class Waiting(Exception):
 class OwnerAction(Waiting):
     """A maintainer must restore access or configuration before a retry can succeed."""
 
+    stage = "owner"
+
+
+class SignInRequired(OwnerAction):
+    stage = "sign-in"
+
 
 def binary():
     bundled = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
@@ -39,12 +45,17 @@ def check_limits(data):
         raise Waiting("Waiting for included allowance (5% reserve)")
 
 
-def preflight():
+def authenticated_cli():
     args = [binary(), "-c", 'forced_login_method="chatgpt"']
     login = subprocess.run(args + ["login", "status"], env=environment(), capture_output=True,
                            text=True, timeout=15)
     if login.returncode or "logged in using chatgpt" not in (login.stdout + login.stderr).lower():
-        raise OwnerAction("Codex requires Sign in with ChatGPT on this Mac")
+        raise SignInRequired("Codex requires Sign in with ChatGPT on this Mac")
+    return args
+
+
+def preflight():
+    args = authenticated_cli()
     with tempfile.TemporaryDirectory() as empty, subprocess.Popen(
             args + ["app-server", "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, cwd=empty, env=environment()) as proc:

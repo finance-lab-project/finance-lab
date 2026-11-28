@@ -14,12 +14,13 @@ COLUMNS = {
     "dependency": "Todo",
     "queued": "Todo",
     "owner": "Blocked",
+    "sign-in": "Blocked",
     "blocked": "Blocked",
 }
 UNBLOCKER = {
     "working": "Product worker", "review": "Independent reviewer and sprint controller",
     "ci": "GitHub Actions", "waiting": "Sprint controller", "queued": "Sprint controller",
-    "dependency": "Prerequisite issue owners", "blocked": "Maintainer", "owner": "Maintainer",
+    "dependency": "Prerequisite issue owners", "blocked": "Maintainer", "owner": "Maintainer", "sign-in": "Maintainer",
 }
 
 

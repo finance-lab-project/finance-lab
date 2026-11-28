@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import board_status
+import subscription
 import worker
 
 
@@ -45,6 +46,16 @@ class BoardStatusTests(unittest.TestCase):
             self.assertNotIn("attempts", state)
             self.assertEqual("queued", state["progress"]["stage"])
             self.assertEqual(["queued"], [c.args[-1]["stage"] for c in board.call_args_list])
+            # A second edit must retain both the queued event and its comment acknowledgement.
+            queued = dict(state["progress"], delivered=["comment"])
+            state["progress"] = queued
+            worker.save(path, state)
+            waiting["body"] += "\nClarify the expected total."
+            gh.return_value = json.dumps([[waiting, active]])
+            board.reset_mock()
+            worker.tick()
+            self.assertEqual(dict(queued, delivered=["comment", "board"]), json.loads(path.read_text())["progress"])
+            self.assertEqual(["queued"], [c.args[-1]["stage"] for c in board.call_args_list])
             advance.reset_mock()
             worker.save(Path(tmp, "active.json"), 78)
             worker.tick()
@@ -61,12 +72,50 @@ class BoardStatusTests(unittest.TestCase):
                 worker.tick()
             prepare.assert_not_called()
 
+    def test_owner_block_clears_before_work_starts_after_repository_recovery(self):
+        issue = {"number": 76, "title": "Show resumed work", "user": {"login": worker.OWNER},
+                 "body": "### Sprint start (Moscow)\n2020-01-01\n### User outcome\nX\n### Acceptance examples\nY"}
+        with tempfile.TemporaryDirectory() as tmp, patch.object(worker, "ROOT", Path(tmp)), \
+                patch.object(worker, "gh", return_value=json.dumps([[issue]])), \
+                patch.object(worker, "api", return_value={"login": worker.OWNER}), \
+                patch.object(worker, "protected", side_effect=[worker.OwnerAction("Restore settings"), None]), \
+                patch.object(board_status, "publish_board"), patch.object(board_status, "publish_comment"), \
+                patch.object(worker, "advance") as advance:
+            with self.assertRaises(worker.OwnerAction):
+                worker.tick()
+            advance.assert_not_called()
+            observed = []
+            advance.side_effect = lambda issue, state, persist, report: observed.append(state["progress"]["stage"])
+            worker.tick()
+            self.assertEqual(["working"], observed)
+
     def test_legacy_blocker_uses_the_latest_worker_explanation(self):
         older = {"user": {"login": worker.OWNER}, "body": "Sprint work blocked. Old reason", "html_url": "old"}
         last = {**older, "body": "Sprint work blocked. Needs formula fix\n\nEdit the issue to retry.", "html_url": "latest"}
         unrelated = {**last, "user": {"login": "someone-else"}}
         gh = Mock(return_value=json.dumps([[older], [last, unrelated]]))
         self.assertEqual(("Needs formula fix", "latest"), board_status.previous_blocker(gh, worker.REPO, worker.OWNER, 78))
+
+    def test_sign_in_block_remains_until_login_recovers(self):
+        issue = {"number": 76, "title": "Show resumed work", "user": {"login": worker.OWNER},
+                 "body": "### Sprint start (Moscow)\n2020-01-01\n### User outcome\nX\n### Acceptance examples\nY"}
+        error = subscription.SignInRequired("Sign in")
+        with tempfile.TemporaryDirectory() as tmp, patch.object(worker, "ROOT", Path(tmp)), \
+                patch.object(worker, "gh", return_value=json.dumps([[issue]])), \
+                patch.object(worker, "api", return_value={"login": worker.OWNER}), patch.object(worker, "protected"), \
+                patch.object(worker, "advance", side_effect=[error, None]) as advance, \
+                patch.object(worker, "authenticated_cli", side_effect=[error, []]), \
+                patch.object(board_status, "publish_board") as board, patch.object(board_status, "publish_comment"):
+            with self.assertRaises(subscription.SignInRequired):
+                worker.tick()
+            board.reset_mock()
+            with self.assertRaises(subscription.SignInRequired):
+                worker.tick()
+            board.assert_not_called()
+            self.assertEqual(advance.call_count, 1)
+            worker.tick()
+            self.assertEqual(["working"], [c.args[-1]["stage"] for c in board.call_args_list])
+            self.assertEqual(advance.call_count, 2)
 
     def test_account_action_and_retryable_quota_have_distinct_status_and_keep_pr_links(self):
         issue = {"number": 78, "title": "Publish status", "user": {"login": worker.OWNER},
