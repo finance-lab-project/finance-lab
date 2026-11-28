@@ -66,17 +66,33 @@ class WorkbookAcceptanceMapTest {
     }
 
     @Test
-    void annualRateExamplePreservesTheApprovedAllocationAndExplicitZero() throws IOException {
-        assertExampleContains("Annual spending/income · annual baseline and saved zero",
+    void budgetExamplesDistinguishManualBaselineFromSavedExpenses() throws IOException {
+        assertExampleContains("Annual spending/income · manual annual baseline and allocation",
                 "366 RUB/year", "101 RUB monthly planning income", "50% investment target",
                 "monthly essential plan is 31 RUB", "investments round to 51 RUB",
                 "19 RUB splits into 11 RUB and 8 RUB at 60% and 40%",
-                "historical actuals remain 366 RUB", "The draft retains the 366 RUB annual source amount",
-                "explicitly saved 0 RUB expense and eleven unentered months",
-                "replace a 1,000 RUB manual baseline with 0",
-                "retains its 1,500 RUB baseline",
+                "The draft retains the 366 RUB annual source amount",
                 "caps investments at 10,000 against a 20,000 target and leaves a zero pool",
                 "Income of 30,000 gives a 10,000 shortfall, zero investments and a zero pool");
+        assertExampleContains("Annual spending/income · prior-year expenses and saved zero",
+                "Save 366 RUB of December 2026 actual expenses",
+                "31 RUB to essentials and 51 RUB to investments",
+                "19 RUB split into 11 RUB and 8 RUB", "December actuals remain 366 RUB",
+                "explicitly saved 0 RUB expense and eleven unentered months",
+                "replace a 1,000 RUB manual baseline with 0", "retains its 1,500 RUB baseline",
+                "[saved expenses][saved-expenses]");
+    }
+
+    @Test
+    void equityExamplesDocumentAmbiguousIdentifierAndMissingEligibleQuote() throws IOException {
+        assertExampleContains("Equity transactions · ledger and identifier checks",
+                "buy of 3 at 90 using identifier SYN-X", "matches two synthetic instrument records",
+                "flagged as ambiguous and excluded", "position stays at 1 unit");
+        assertExampleContains("Equity overview · cost and quotes",
+                "On 2026-11-28", "only quote is dated 2026-11-29",
+                "flag the quote as missing for the valuation date",
+                "330 RUB cost and 110 RUB/unit average entry visible",
+                "Leave value and unrealized difference unknown");
     }
 
     @Test
