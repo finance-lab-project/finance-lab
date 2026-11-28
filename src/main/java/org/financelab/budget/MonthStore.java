@@ -33,6 +33,14 @@ class MonthStore {
 
     @Transactional
     public void reconcile(String owner, LocalDate date, long cardBalance) {
+        // Before an owner's first snapshot, past-month entries belong to their budget month.
+        // Keep the day for same-month entries and preserve new movements after the snapshot.
+        jdbc.sql("""
+                UPDATE cash_movement
+                   SET effective_date = date(period || '-01', '+1 month', '-1 day')
+                 WHERE owner = :owner AND substr(effective_date, 1, 7) > period
+                   AND NOT EXISTS (SELECT 1 FROM cash_reconciliation WHERE owner = :owner)
+                """).param("owner", owner).update();
         // Older databases have only an aggregate for edits after the original reference.
         jdbc.sql("""
                 INSERT INTO cash_movement (owner, period, effective_date, amount)
