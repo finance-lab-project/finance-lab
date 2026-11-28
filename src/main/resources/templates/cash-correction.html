@@ -1,0 +1,10 @@
+<th:block xmlns:th="http://www.thymeleaf.org" th:fragment="field">
+    <label th:if="${cashReferenceDate != null and period.atDay(1).isBefore(cashReferenceDate)}" for="correctionDate">
+        Дата исправления до сверки <span th:text="${cashReferenceDate}"></span> (если применимо)
+        <input id="correctionDate" name="correctionDate" type="date" data-saved=""
+               th:min="${period.atDay(1)}"
+               th:max="${period.atEndOfMonth().isBefore(cashReferenceDate) ? period.atEndOfMonth() : cashReferenceDate.minusDays(1)}"
+               th:value="${draft['correctionDate']}">
+    </label>
+    <p th:if="${errors['correctionDate']}" class="notice error" role="alert" th:text="${errors['correctionDate']}"></p>
+</th:block>

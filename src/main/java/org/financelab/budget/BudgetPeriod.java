@@ -1,5 +1,6 @@
 package org.financelab.budget;
 
+import java.time.LocalDate;
 import java.time.Month;
 import java.time.ZoneId;
 import java.time.YearMonth;
@@ -30,6 +31,10 @@ class BudgetPeriod {
 
     YearMonth currentInMoscow() {
         return fixed == null ? YearMonth.now(ZoneId.of("Europe/Moscow")) : fixed;
+    }
+
+    LocalDate todayInMoscow() {
+        return fixed == null ? LocalDate.now(ZoneId.of("Europe/Moscow")) : fixed.atEndOfMonth();
     }
 
     static String startDate(YearMonth month) {
