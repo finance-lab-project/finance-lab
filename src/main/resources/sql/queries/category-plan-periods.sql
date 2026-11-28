@@ -1,17 +1,15 @@
--- The reserved catalogue may predate an owner's initial settings. Other keys are
--- created by saving a category, and a later addition has a known start in either case.
-WITH first_settings AS (
-    SELECT category, min(since) AS start FROM planning_category
-     WHERE owner = :owner GROUP BY category
-), monthly_rates AS (
+WITH monthly_rates AS (
     SELECT m.category, m.period, m.plan FROM category_month m
      WHERE m.owner = :owner AND m.period <= :last
        AND NOT EXISTS (SELECT 1 FROM category_month_inherited_plan i WHERE i.owner = m.owner
                         AND i.category = m.category AND i.period = m.period)
 ), inception AS (
-    SELECT f.category, f.start FROM first_settings f
-     WHERE f.category NOT IN ('housing', 'food', 'health', 'leisure', 'travel')
-        OR f.start > (SELECT min(since) FROM planning_settings WHERE owner = :owner)
+    SELECT category, since AS start FROM category_plan_inception WHERE owner = :owner
+    UNION ALL
+    SELECT f.category, f.since FROM inferred_category_plan_inception f
+     WHERE f.owner = :owner AND NOT EXISTS (
+         SELECT 1 FROM category_plan_inception s WHERE s.owner = f.owner AND s.category = f.category
+     )
 ), rates AS (
     SELECT category, period, plan FROM monthly_rates
     UNION ALL

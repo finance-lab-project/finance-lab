@@ -361,6 +361,12 @@ class MonthStore {
                               boolean explicitPlan, int initialRevision) {
         String period = month.toString();
         if (explicitPlan) {
+            jdbc.sql("""
+                    INSERT INTO category_plan_inception (owner, category, since)
+                    SELECT owner, category, since FROM inferred_category_plan_inception
+                     WHERE owner = ? AND category = ? AND since > ?
+                    ON CONFLICT (owner, category) DO NOTHING
+                    """).params(owner, category, period).update();
             jdbc.sql("DELETE FROM category_month_inherited_plan WHERE owner = ? AND period = ? AND category = ?")
                     .params(owner, period, category).update();
         } else {

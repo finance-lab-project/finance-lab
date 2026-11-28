@@ -101,6 +101,29 @@ SELECT p.owner, p.since, p.category FROM planning_category p
                     AND m.period = p.since AND m.category = p.category)
 ON CONFLICT DO NOTHING;
 
+-- A backdated history edit must preserve a category's already established start.
+CREATE TABLE IF NOT EXISTS category_plan_inception (
+    owner TEXT NOT NULL,
+    category TEXT NOT NULL REFERENCES category(code),
+    since TEXT NOT NULL,
+    PRIMARY KEY (owner, category)
+) STRICT;
+
+-- For upgraded owners, a pre-settings rate is evidence that a reserved category
+-- was already used. Inherited plan snapshots supply no such evidence.
+CREATE VIEW IF NOT EXISTS inferred_category_plan_inception AS
+SELECT f.owner, f.category, f.since FROM (
+    SELECT owner, category, min(since) AS since FROM planning_category GROUP BY owner, category
+) f
+WHERE f.category NOT IN ('housing', 'food', 'health', 'leisure', 'travel')
+   OR (f.since > (SELECT min(since) FROM planning_settings WHERE owner = f.owner)
+       AND NOT EXISTS (
+           SELECT 1 FROM category_month m
+            WHERE m.owner = f.owner AND m.category = f.category AND m.period < f.since
+              AND NOT EXISTS (SELECT 1 FROM category_month_inherited_plan i
+                               WHERE i.owner = m.owner AND i.period = m.period AND i.category = m.category)
+       ));
+
 CREATE TABLE IF NOT EXISTS investment_account (
     id INTEGER PRIMARY KEY,
     owner TEXT NOT NULL,
