@@ -59,6 +59,12 @@ class MarchBudgetTest {
             assertThat(publicPolicy.html().select("main h2").eachText()).containsExactly(
                     "Вход и сессия", "Данные бюджета", "Журналы приложения", "Аналитика");
             assertThat(publicPolicy.html().select("form, script")).isEmpty();
+            assertThat(publicPolicy.html().selectFirst("main").text()).contains(
+                    "Yandex Cloud Object Storage",
+                    "подтвердить при запуске пилота",
+                    "фактическими расходами",
+                    "в защищённом журнале вне сервера пилота",
+                    "Сообщения об ошибках могут содержать сведения о запросе.");
 
             var login = browser.get("/login");
             assertThat(login.status()).isEqualTo(200);
