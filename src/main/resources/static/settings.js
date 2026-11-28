@@ -33,13 +33,15 @@ function addCard(row) {
 }
 
 function update(input, value, editing) {
-    if (input !== editing || input !== document.activeElement) input.value = value;
+    if (input !== editing || input !== document.activeElement) {
+        input.value = input.matches(moneyFields) ? formatMoney(value) : value;
+    }
 }
 
 function display(editing) {
-    update(form.querySelector("#income"), rubles.format(BigInt(draft.income)), editing);
+    update(form.querySelector("#income"), draft.income, editing);
     update(form.querySelector("#target-percent"), view.targetPercent, editing);
-    update(form.querySelector("#target-amount"), rubles.format(BigInt(view.targetAmount)), editing);
+    update(form.querySelector("#target-amount"), view.targetAmount, editing);
     const zeroIncome = draft.income === "0";
     form.querySelector("#target-amount").disabled = zeroIncome;
     for (const [i, row] of draft.rows.entries()) {
@@ -51,9 +53,7 @@ function display(editing) {
         for (const input of card.querySelectorAll("input[data-field]")) {
             const key = input.dataset.field;
             if (key === "name") continue;
-            const money = key === "amount" || key === "annual";
-            const text = money && fields[key] ? rubles.format(BigInt(fields[key])) : fields[key];
-            update(input, text, editing);
+            update(input, fields[key], editing);
             input.disabled = (key === "incomePercent" && (zeroIncome || zeroPool)) || (key === "amount" && zeroPool);
         }
     }

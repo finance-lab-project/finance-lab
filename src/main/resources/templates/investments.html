@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Инвестиции · Finance Lab</title>
     <link rel="stylesheet" th:href="@{/budget.css}">
+    <script defer th:src="@{/money.js}"></script>
 </head>
 <body>
 <header class="app-bar">
@@ -81,14 +82,14 @@
                     <p th:if="${savedAccount == account.id()}" class="notice" role="status">Данные сохранены.</p>
                     <div class="field-grid">
                         <label>Стоимость на конец месяца, ₽
-                            <input type="text" inputmode="decimal" autocomplete="off" name="closingValue" required
+                            <input data-money type="text" inputmode="decimal" autocomplete="off" name="closingValue" required
                                    th:value="${editing ? draft.get('closingValue') : (figures == null ? '' : @rubles.number(figures.closingValue()))}"
                                    th:attr="aria-invalid=${valueError != null},aria-describedby=${valueError != null ? 'value-error-' + account.id() : null}">
                             <small th:if="${valueError != null}" th:id="|value-error-${account.id()}|"
                                    class="error" role="alert" th:text="${valueError}"></small>
                         </label>
                         <label>Зачисленный доход, ₽
-                            <input type="text" inputmode="decimal" autocomplete="off" name="creditedIncome" required
+                            <input data-money type="text" inputmode="decimal" autocomplete="off" name="creditedIncome" required
                                    th:value="${editing ? draft.get('creditedIncome') : (figures == null ? '' : @rubles.number(figures.creditedIncome()))}"
                                    th:attr="aria-invalid=${incomeError != null},aria-describedby=${incomeError != null ? 'income-error-' + account.id() : 'investment-income-help'}">
                             <small th:if="${incomeError != null}" th:id="|income-error-${account.id()}|"

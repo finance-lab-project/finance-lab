@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FIRE · Finance Lab</title>
     <link rel="stylesheet" th:href="@{/budget.css}">
+    <script defer th:src="@{/money.js}"></script>
 </head>
 <body>
 <header class="app-bar">
@@ -86,7 +87,7 @@
             <h2 id="fire-goals">Цели</h2>
             <form id="capital-goal-form" th:action="@{/fire/goals/capital}" method="post">
                 <label class="setting-field">Цель по капиталу, ₽
-                    <input name="amount" type="text" inputmode="numeric" required
+                    <input data-money name="amount" type="text" inputmode="numeric" required
                            th:value="${capitalDraft != null ? capitalDraft : (capitalGoal == null ? '' : @rubles.number(capitalGoal))}"
                            th:attr="aria-invalid=${capitalError != null},aria-describedby=${capitalError != null ? 'capital-error' : null}">
                 </label>
@@ -95,7 +96,7 @@
             </form>
             <form id="income-goal-form" th:action="@{/fire/goals/income}" method="post">
                 <label class="setting-field">Цель по пассивному доходу в месяц, ₽
-                    <input name="amount" type="text" inputmode="numeric" required
+                    <input data-money name="amount" type="text" inputmode="numeric" required
                            th:value="${incomeDraft != null ? incomeDraft : (incomeGoal == null ? '' : @rubles.number(incomeGoal))}"
                            th:attr="aria-invalid=${incomeError != null},aria-describedby=${incomeError != null ? 'income-error' : null}">
                 </label>

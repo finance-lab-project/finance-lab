@@ -19,7 +19,7 @@ public class Rubles {
     public Rubles() {}
 
     /**
-     * Parses an amount exactly. A fractional part is accepted only if all its digits are zero.
+     * Parses an amount exactly, with an optional trailing ruble sign. A fractional part is accepted only if all its digits are zero.
      * @param draft text from the amount field, optionally grouped with spaces
      * @return amount in whole rubles
      * @throws IllegalArgumentException with a Russian validation message if the amount is missing,
@@ -28,6 +28,7 @@ public class Rubles {
     static long parse(@Nullable String draft) {
         String value = Objects.requireNonNullElse(draft, "")
                 .replace('\u00a0', ' ').replace('\u202f', ' ').strip().replace('−', '-');
+        if (value.endsWith("₽")) value = value.substring(0, value.length() - 1).stripTrailing();
         if (!WHOLE_AMOUNT.matcher(value).matches()) {
             throw new IllegalArgumentException("Введите сумму в целых рублях, без копеек.");
         }
