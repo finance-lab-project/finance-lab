@@ -813,6 +813,29 @@ class MarchBudgetTest {
     }
 
     @Test
+    void sameMonthSettingsPreserveExplicitRatesAndTheHistoryForm() throws Exception {
+        var january = YearMonth.of(2028, 1);
+        try (var app = startCashTest("2028-02")) {
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2028-01', 'food', 0, 2300), ('owner-a', '2028-01', 'health', 1000, 100)
+                    """).update();
+            var settings = new PlanDraft("100000", "fraction", "0/1", List.of(
+                    new PlanDraft.Row("food", "Food", "essential", "amount", "30000"),
+                    new PlanDraft.Row("health", "Health", "essential", "amount", "2000")));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", january, 0,
+                    PlanCalculator.evaluate(settings))).isTrue();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2028, january.plusMonths(1));
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(12000));
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/history/2028-01").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-food").val()).isEqualTo("0");
+            assertThat(form.expectFirst("#plan-health").val().replace("\u00a0", "")).isEqualTo("1000");
+            assertThat(form.expectFirst("#amount-food").val().replace("\u00a0", "")).isEqualTo("2300");
+        }
+    }
+
+    @Test
     void savingDecemberSettingsPreservesLaterExplicitLegacyRates() {
         var december = YearMonth.of(2027, 12);
         try (var app = start(false, december.toString())) {
