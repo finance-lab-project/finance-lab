@@ -832,12 +832,19 @@ class MarchBudgetTest {
             var january = YearMonth.of(2028, 1);
             assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isEqualTo(BigInteger.valueOf(384000));
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var januaryForm = reviewPage(mvc, "/months/2028-01?edit=true").expectFirst("#month-form");
+            cashPost(mvc, januaryForm, Map.of("amount-travel", "800")).andExpect(status().isFound());
             var form = reviewPage(mvc, "/history/2027-12").expectFirst("#history-form");
             cashPost(mvc, form, Map.of("plan-travel", "35000", "amount-food", "24000", "amount-health", "0")).andExpect(status().isFound());
             assertThat(store.readYear("owner-a", 2028, january).categories()).filteredOn(r -> r.code().equals("travel"))
                     .singleElement().satisfies(r -> assertThat(r.plan()).isEqualTo(BigInteger.valueOf(420000)));
             assertThat(store.read("owner-a", january).categories()).filteredOn(r -> r.code().equals("travel")).singleElement()
                     .satisfies(travel -> assertThat(travel.plan()).isEqualTo(35000L));
+            assertThat(jdbc.sql("""
+                    SELECT plan, actual FROM category_month WHERE owner = 'owner-a'
+                      AND period = '2028-01' AND category = 'travel'
+                    """).query((rs, row) -> List.of(rs.getLong(1), rs.getLong(2))).single())
+                    .containsExactly(30000L, 800L);
         }
         try (var app = startCashTest("2029-01")) {
             var report = app.getBean(MonthStore.class).readYear("owner-a", 2029, YearMonth.of(2029, 1));
