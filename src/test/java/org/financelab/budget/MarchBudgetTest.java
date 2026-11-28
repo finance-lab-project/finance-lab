@@ -614,7 +614,7 @@ class MarchBudgetTest {
     }
 
     @Test
-    void existingDemoRestoresKnownZeroesAndKeepsUnrelatedLegacyDefaultsMissing() throws Exception {
+    void legacyDemoKeepsUnprovenZeroesMissingUntilConfirmedInHistory() throws Exception {
         try (var app = startReportTest("fixture", "2027-04")) {
             var jdbc = app.getBean(JdbcClient.class);
             jdbc.sql("""
@@ -653,6 +653,16 @@ class MarchBudgetTest {
         try (var app = startReportTest("demo", "2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var report = reviewPage(mvc, "/years/2027");
+            assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 500 ₽ 2 из 12 мес.");
+            assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("5 500 ₽ 2 из 12 мес.");
+            var form = reviewPage(mvc, "/history/2027-03").expectFirst("#history-form");
+            assertThat(form.expectFirst("#amount-health").val()).isEmpty();
+            assertThat(form.expectFirst("#amount-travel").val()).isEmpty();
+            cashPost(mvc, form, Map.of("amount-health", "0", "amount-travel", "0")).andExpect(status().isFound());
+        }
+        try (var app = startReportTest("demo", "2027-04")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var report = reviewPage(mvc, "/years/2027");
             assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 000 ₽ 3 из 12 мес.");
             assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("3 667 ₽ 3 из 12 мес.");
             var unseededReport = Jsoup.parse(mvc.perform(get("/years/2027").principal(() -> "owner-b"))
@@ -661,6 +671,16 @@ class MarchBudgetTest {
                     .isEqualTo("Нет данных 0 из 12 мес.");
             assertThat(unseededReport.expectFirst("#row-travel [data-label=Среднее]").text())
                     .isEqualTo("Нет данных 0 из 12 мес.");
+        }
+    }
+
+    @Test
+    void freshDemoIncludesBothRecordedMarchZeroes() throws Exception {
+        try (var app = startReportTest("demo", "2027-04")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var report = reviewPage(mvc, "/years/2027");
+            assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 000 ₽ 3 из 12 мес.");
+            assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("3 667 ₽ 3 из 12 мес.");
         }
     }
 

@@ -28,19 +28,8 @@ SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actu
 FROM fixture CROSS JOIN owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
 
--- Earlier demo versions seeded these two March actuals as zero at revision 0.
--- Corroborate the seed with the January/February category set and the repeated
--- 2026 actuals. Allow up to four corrections to the January–November actuals.
-UPDATE category_month AS march SET revision = 1
- WHERE owner IN ('owner-a', 'owner-b') AND period = '2027-03'
-   AND category IN ('health', 'travel') AND actual = 0 AND revision = 0
-   AND (SELECT count(*) FROM category_month early WHERE early.owner = march.owner
-          AND early.period IN ('2027-01', '2027-02')
-          AND early.category IN ('housing', 'food', 'health', 'leisure', 'travel')) = 10
-   AND (SELECT count(*) FROM category_month history WHERE history.owner = march.owner
-          AND history.period BETWEEN '2026-01' AND '2026-11'
-          AND ((history.category = 'housing' AND history.actual = 12000)
-            OR (history.category = 'food' AND history.actual = 24000))) >= 18;
+-- Older demo rows have no seed marker. Keep untouched zeroes missing until
+-- the owner explicitly records an actual through history.
 
 -- Include existing walkthrough databases. The reserved food key identifies the demo months.
 WITH figures(period, income, contributions) AS (VALUES
