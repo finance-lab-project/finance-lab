@@ -72,18 +72,6 @@ class PlanStore {
         var plan = PlanCalculator.evaluate(withHistoricalAverages(owner, january, saved));
         // Rollover records settings only. Existing month rows retain their recorded plans.
         saveCategories(owner, january.toString(), plan, false, false);
-        // An unchanged allocation in a copied snapshot does not set a new effective rate.
-        jdbc.sql("""
-                INSERT INTO planning_category_rollover_copy (owner, since, category)
-                SELECT next.owner, next.since, next.category
-                  FROM planning_category next
-                  JOIN planning_category previous ON previous.owner = next.owner
-                   AND previous.category = next.category AND previous.plan = next.plan
-                 WHERE next.owner = :owner AND next.since = :january
-                   AND previous.since = (
-                       SELECT max(since) FROM planning_settings WHERE owner = :owner AND since < :january
-                   )
-                """).param("owner", owner).param("january", january.toString()).update();
     }
 
     // Called within the month write transaction so the new plans and historical figures commit together.
@@ -140,6 +128,19 @@ class PlanStore {
     private void saveCategories(String owner, String since, PlanCalculator.Preview plan,
                                 boolean recordMonth, boolean refreshInherited) {
         PlanDraft draft = plan.draft();
+        Map<String, Long> previousRates = new HashMap<>();
+        if (!recordMonth) {
+            jdbc.sql("""
+                    SELECT p.category, p.plan FROM planning_category p
+                     WHERE p.owner = :owner AND p.since = (
+                         SELECT max(since) FROM planning_category WHERE owner = :owner AND since <= :since
+                     ) AND (p.since < :since OR EXISTS (
+                         SELECT 1 FROM planning_category_rollover_copy c WHERE c.owner = p.owner
+                           AND c.since = p.since AND c.category = p.category
+                     ))
+                    """).param("owner", owner).param("since", since)
+                    .query(rs -> { previousRates.put(rs.getString("category"), rs.getLong("plan")); });
+        }
         jdbc.sql("DELETE FROM planning_category WHERE owner = ? AND since = ?").params(owner, since).update();
         for (int i = 0; i < draft.rows().size(); i++) {
             PlanDraft.Row row = draft.rows().get(i);
@@ -157,6 +158,10 @@ class PlanStore {
                     INSERT INTO planning_category (owner, since, category, name, kind, addition_order, unit, value, plan)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """).params(owner, since, code, row.name().strip(), row.group(), i + 1, row.unit(), row.value(), rubles).update();
+            if (Long.valueOf(rubles).equals(previousRates.get(code))) {
+                jdbc.sql("INSERT INTO planning_category_rollover_copy (owner, since, category) VALUES (?, ?, ?)")
+                        .params(owner, since, code).update();
+            }
             if (recordMonth) {
                 int added = jdbc.sql("""
                         INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)

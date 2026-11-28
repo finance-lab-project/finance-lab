@@ -130,8 +130,9 @@ class MonthStore {
         this.plans = plans;
         this.period = period;
         this.jdbc = jdbc;
-        this.readMonthSql = new ClassPathResource("sql/queries/read-month.sql").getContentAsString(StandardCharsets.UTF_8);
         var categoryPlanPeriods = new ClassPathResource("sql/queries/category-plan-periods.sql")
+                .getContentAsString(StandardCharsets.UTF_8);
+        this.readMonthSql = categoryPlanPeriods + new ClassPathResource("sql/queries/read-month.sql")
                 .getContentAsString(StandardCharsets.UTF_8);
         this.readYearPlansSql = categoryPlanPeriods + new ClassPathResource("sql/queries/read-year-plans.sql")
                 .getContentAsString(StandardCharsets.UTF_8);
@@ -152,6 +153,7 @@ class MonthStore {
         var catalogue = month.isBefore(current) ? plans.terms(owner, current) : terms;
         var categories = jdbc.sql(readMonthSql)
                 .param("owner", owner).param("period", month.toString())
+                .param("last", month.toString())
                 .param("since", terms == null ? "" : terms.since())
                 .param("catalogueSince", catalogue == null ? "" : catalogue.since())
                 .param("withBuffer", withBuffer)

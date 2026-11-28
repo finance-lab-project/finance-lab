@@ -813,6 +813,35 @@ class MarchBudgetTest {
     }
 
     @Test
+    void backdatedDecemberRateCarriesThroughAlreadyOpenedJanuaryAndTheFollowingYear() throws Exception {
+        try (var app = startCashTest("2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 32000, '0/1', 1)").update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a','2027-01','travel','Travel','discretionary',1,'fraction','1/1',30000),
+                        ('owner-a','2027-01','food','Food','essential',2,'amount','1000',1000),
+                        ('owner-a','2027-01','health','Health','essential',3,'amount','1000',1000)
+                    """).update();
+            var store = app.getBean(MonthStore.class);
+            var january = YearMonth.of(2028, 1);
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isEqualTo(BigInteger.valueOf(384000));
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/history/2027-12").expectFirst("#history-form");
+            cashPost(mvc, form, Map.of("plan-travel", "35000", "amount-food", "24000", "amount-health", "0")).andExpect(status().isFound());
+            assertThat(store.readYear("owner-a", 2028, january).categories()).filteredOn(r -> r.code().equals("travel"))
+                    .singleElement().satisfies(r -> assertThat(r.plan()).isEqualTo(BigInteger.valueOf(420000)));
+            assertThat(store.read("owner-a", january).categories()).filteredOn(r -> r.code().equals("travel")).singleElement()
+                    .satisfies(travel -> assertThat(travel.plan()).isEqualTo(35000L));
+        }
+        try (var app = startCashTest("2029-01")) {
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2029, YearMonth.of(2029, 1));
+            assertThat(report.categories()).filteredOn(r -> r.code().equals("travel"))
+                    .singleElement().satisfies(r -> assertThat(r.plan()).isEqualTo(BigInteger.valueOf(420000)));
+        }
+    }
+
+    @Test
     void sameMonthSettingsPreserveExplicitRatesAndTheHistoryForm() throws Exception {
         var january = YearMonth.of(2028, 1);
         try (var app = startCashTest("2028-02")) {
