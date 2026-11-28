@@ -58,6 +58,7 @@ class FireTest {
             var gap = page(mvc, phone, "owner-a");
             assertThat(gap.expectFirst("#income-gaps").text()).contains("Период неполный", "Октябрь 2026", "Вклад");
             assertThat(gap.expectFirst("#income-average").text()).isEqualTo("22 500 ₽");
+            assertThat(gap.expectFirst("#income-percentage").text()).isEqualTo("22,5%");
             assertThat(gap.expectFirst("#income-gaps a").attr("href")).isEqualTo("/investments/2026-10");
             mvc.perform(post("/investments/2026-10/accounts/" + first).principal(() -> "owner-a")
                     .param("closingValue", "2000000").param("creditedIncome", " "))
