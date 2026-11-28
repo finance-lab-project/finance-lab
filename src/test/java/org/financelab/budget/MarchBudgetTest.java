@@ -569,6 +569,29 @@ class MarchBudgetTest {
     }
 
     @Test
+    void monthlyInvestmentPlanShowsTargetOnlyWhenFundingFallsShort() throws Exception {
+        try (var app = start()) {
+            var owner = signedIn(app, "owner-a");
+            Document funded = owner.get(MARCH).html();
+            assertThat(funded.select("#plan-target, #investment-shortfall")).isEmpty();
+            assertThat(funded.select("#plan-investments, #actual-contributions").eachText())
+                    .containsExactly("40 000 ₽", "10 000 ₽");
+
+            Document settings = owner.get("/settings").html();
+            var draft = settingsDraft(settings);
+            assertThat(owner.plan(settings, new PlanDraft("65000", "amount", "40000", draft.rows())).status())
+                    .isEqualTo(204);
+
+            Document shortfall = owner.get(MARCH).html();
+            assertThat(shortfall.select("#plan-target, #plan-investments, #actual-contributions").eachText())
+                    .containsExactly("40 000 ₽", "25 000 ₽", "10 000 ₽");
+            assertThat(shortfall.expectFirst("#investment-shortfall").text())
+                    .isEqualTo("После необходимых расходов до инвестиционной цели не хватает 15 000 ₽.");
+            assertThat(shortfall.select("#plan-shortfall")).isEmpty();
+        }
+    }
+
+    @Test
     void emptyOwnerCanSetUpRenameRegroupAndReopenWithoutHistory() throws Exception {
         String first;
         String second;
