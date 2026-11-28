@@ -121,6 +121,10 @@ class MonthController {
         // Keep the submitted inputs for review and include any categories added on the other device.
         MonthActuals.savedFields(current).forEach(draft::putIfAbsent);
         MonthActuals.parse(current, draft, errors);
+        // An invalid typed value still needs correction before the owner can accept the new revision.
+        if (errors.keySet().stream().anyMatch(key -> !fields.getOrDefault(key, "").isBlank())) {
+            model.addAttribute("revision", revision);
+        }
         response.setStatus(HttpStatus.CONFLICT.value());
         model.addAttribute("conflict", true);
         model.addAttribute("draft", draft);
