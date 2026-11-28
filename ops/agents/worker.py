@@ -12,6 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from board_status import deliver, transition
 from subscription import Waiting, agent, preflight
 
 REPO = "finance-lab-project/finance-lab"
@@ -159,7 +160,7 @@ def record(pr, sha, decision, summary):
        "-f", "summary=" + review_body(summary))
 
 
-def advance(issue, state, persist):
+def advance(issue, state, persist, report):
     number = issue["number"]
     branch = f"sprint/issue-{number}"
     pulls = api(endpoint(f"pulls?head={REPO.split('/')[0]}:{branch}&base=main&state=all"))
@@ -179,6 +180,7 @@ def advance(issue, state, persist):
             return
         status, detail = ci(sha)
         if status == "pending":
+            report("ci", "Waiting for the required Maven check.", "GitHub Actions runs verify.", pr["html_url"])
             return
         if status == "failed":
             feedback = "The required Maven check failed: " + detail
@@ -189,6 +191,8 @@ def advance(issue, state, persist):
                 except subprocess.CalledProcessError:
                     pass
         elif state.get("review", {}).get("sha") == sha:
+            report("review", "The independent decision is recorded locally.",
+                   "The controller checks the recorded review and merge conditions.", pr["html_url"])
             cached = state["review"]
             reviews = json.loads(gh("api", "--paginate", "--slurp", endpoint(f"pulls/{pr['number']}/reviews?per_page=100")))
             latest = next((r for page in reversed(reviews) for r in reversed(page)
@@ -238,6 +242,8 @@ def advance(issue, state, persist):
         snapshot(checkout, work)
         spec = f"Issue #{number}: {issue['title']}\n{issue['body']}\n"
         if pr and not feedback:
+            report("review", "CI passed; independent review is running.",
+                   "The reviewer checks this revision.", pr["html_url"])
             changed = git(checkout, "diff", "--no-ext-diff", "--no-renames", "origin/main...HEAD")
             if len(changed) > 100000:
                 raise Blocked("Split this change into smaller issues for a complete review")
@@ -258,6 +264,8 @@ def advance(issue, state, persist):
                        ["decision", "summary"], True)
         if result["decision"] == "blocked":
             raise Blocked(result["summary"])
+        report("working", "The implementation is ready for publication.",
+               "The controller publishes the revision for CI and review.")
         apply_edits(work, checkout)
         if not git(checkout, "diff", "--cached", "--name-only"):
             raise Blocked("Implementation produced no changes. " + result["summary"])
@@ -285,29 +293,55 @@ def tick():
     active = ROOT / "active.json"
     current = json.loads(active.read_text()) if active.exists() else None
     items.sort(key=lambda i: i["number"] != current)
+    # Retry pending publications before scheduling. An active PR can otherwise
+    # prevent earlier failures on unrelated issues from ever being repaired.
+    for issue in items:
+        path = ROOT / f"{issue['number']}.json"
+        if path.exists():
+            saved = json.loads(path.read_text())
+            deliver(saved, lambda: save(path, saved), gh, REPO, OWNER, issue["number"])
     for issue in items:
         state_path = ROOT / f"{issue['number']}.json"
         state = json.loads(state_path.read_text()) if state_path.exists() else {}
         digest = hashlib.sha256((issue["title"] + issue["body"]).encode()).hexdigest()
+
+        def persist():
+            save(state_path, state)
+
+        def report(stage, reason, action, pr_url=None):
+            transition(state, stage, reason, action, persist, pr_url)
+            deliver(state, persist, gh, REPO, OWNER, issue["number"])
+
         if state.get("blocked") == digest:
+            if "progress" not in state:
+                report("blocked", "The product worker previously reported a blocker on this issue.",
+                       "Maintainer: read the existing blocker comment and resolve or reassign the work.")
             continue
         if state.get("spec") != digest:
             state = {"spec": digest, **{k: v for k, v in state.items() if k == "pushing"}}
             save(state_path, state)
         try:
             deps = [api(endpoint(f"issues/{n}")) for n in dependencies(issue["body"])]
-            if any(d["state"] != "closed" or d.get("state_reason") == "not_planned" or "pull_request" in d for d in deps):
+            outstanding = [f"#{d['number']}" for d in deps if d["state"] != "closed"
+                           or d.get("state_reason") == "not_planned" or "pull_request" in d]
+            if outstanding:
+                report("dependency", "Waiting on " + ", ".join(outstanding) + ".",
+                       "The controller rechecks prerequisites on its next poll.")
                 continue
             protected()
             if api("user")["login"] != OWNER:
                 raise Waiting("The Mac GitHub identity must be " + OWNER)
             save(active, issue["number"])
-            advance(issue, state, lambda: save(state_path, state))
+            if not state.get("progress") or state["progress"]["stage"] == "dependency":
+                report("working", "The product worker claimed this issue.",
+                       "The worker implements the acceptance examples.")
+            advance(issue, state, persist, report)
+        except Waiting as exc:
+            report("waiting", str(exc), "The controller retries on the next poll; check local sign-in if requested.")
+            raise
         except Blocked as exc:
-            message = f"Sprint work blocked. {str(exc)[:1200]}\n\nEdit the issue to retry."
-            gh("issue", "comment", str(issue["number"]), "-R", REPO, "--body", message)
             state["blocked"] = digest
-            save(state_path, state)
+            report("blocked", str(exc)[:1200], "Maintainer: resolve the reported blocker and update the issue to retry.")
             if active.exists() and json.loads(active.read_text()) == issue["number"]:
                 active.unlink()
             continue
