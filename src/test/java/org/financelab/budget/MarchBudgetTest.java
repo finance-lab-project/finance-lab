@@ -1,6 +1,7 @@
 package org.financelab.budget;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
@@ -10,7 +11,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +49,84 @@ class MarchBudgetTest {
     private static final String MARCH = "/months/2027-03";
     private static final String EDIT = MARCH + "?edit=true";
     @TempDir Path directory;
+
+    @Test
+    void measuresSyntheticScreenTraffic() throws Exception {
+        Map<String, String> screens = new LinkedHashMap<>();
+        screens.put("/months/{month}", MARCH);
+        screens.put("/history/{month}", "/history/2027-02"); // History only serves completed months.
+        screens.put("/investments/{month}", "/investments/2027-03");
+        screens.put("/years/{year}", "/years/2027");
+        screens.put("/settings", "/settings");
+        screens.put("/fire", "/fire");
+
+        try (var app = start()) {
+            var visitor = signedIn(app, "owner-a");
+            var probe = new Browser(app);
+            for (var screen : screens.entrySet()) {
+                assertThat(visitor.measure("GET", screen.getValue(), 200).error())
+                        .as("Warm-up GET %s (expected HTTP 200)", screen.getKey()).isFalse();
+            }
+            assertThat(probe.measure("HEAD", "/", 302).error())
+                    .as("Warm-up HEAD / (expected HTTP 302)").isFalse();
+
+            Map<String, List<RequestSample>> samples = new LinkedHashMap<>();
+            screens.keySet().forEach(route -> samples.put("GET " + route, new ArrayList<>()));
+            String probeRoute = "HEAD /";
+            samples.put(probeRoute, new ArrayList<>());
+            int journeys = 20;
+            int completedJourneys = 0;
+            var process = ProcessHandle.current();
+            var memory = ManagementFactory.getMemoryMXBean();
+            long heapBefore = memory.getHeapMemoryUsage().getUsed();
+            long maxSampledHeap = heapBefore;
+            var cpuBefore = process.info().totalCpuDuration();
+            Instant start = Instant.now();
+            for (int journey = 0; journey < journeys; journey++) {
+                boolean complete = true;
+                for (var screen : screens.entrySet()) {
+                    var sample = visitor.measure("GET", screen.getValue(), 200);
+                    samples.get("GET " + screen.getKey()).add(sample);
+                    complete &= !sample.error();
+                }
+                if (complete) {
+                    completedJourneys++;
+                }
+                samples.get(probeRoute).add(probe.measure("HEAD", "/", 302));
+                maxSampledHeap = Math.max(maxSampledHeap, memory.getHeapMemoryUsage().getUsed());
+            }
+            Instant end = Instant.now();
+            var cpuAfter = process.info().totalCpuDuration();
+            String cpuMillis = cpuBefore.flatMap(before -> cpuAfter.map(after -> after.minus(before)))
+                    .map(duration -> Long.toString(duration.toMillis())).orElse("unavailable");
+            int screenRequests = screens.keySet().stream().mapToInt(route -> samples.get("GET " + route).size()).sum();
+            int probes = samples.get(probeRoute).size();
+            System.out.printf("Synthetic workload release=%s start=%s end=%s journeys=%d completed=%d "
+                            + "httpRequests=%d screenRequests=%d healthProbes=%d processCpuMs=%s "
+                            + "initialHeapBytes=%d maxSampledHeapBytes=%d%n",
+                    System.getProperty("budget.measurement.release", "local-source"), start, end, journeys,
+                    completedJourneys, screenRequests + probes, screenRequests, probes, cpuMillis,
+                    heapBefore, maxSampledHeap);
+
+            for (var route : samples.entrySet()) {
+                var requests = route.getValue();
+                long errors = requests.stream().filter(RequestSample::error).count();
+                long[] sorted = requests.stream().mapToLong(RequestSample::nanos).sorted().toArray();
+                System.out.printf(Locale.ROOT, "%s requests=%d errors=%d p50Ms=%.3f p95Ms=%.3f%n",
+                        route.getKey(), requests.size(), errors, percentileMillis(sorted, 0.50),
+                        percentileMillis(sorted, 0.95));
+            }
+            assertThat(samples.values()).allSatisfy(requests -> assertThat(requests).hasSize(journeys));
+            assertThat(samples).allSatisfy((route, requests) ->
+                    assertThat(requests).as(route).noneMatch(RequestSample::error));
+        }
+    }
+
+    private static double percentileMillis(long[] sortedNanos, double fraction) {
+        return sortedNanos[(int) Math.ceil(fraction * sortedNanos.length) - 1] / 1_000_000.0;
+    }
+
+    private record RequestSample(long nanos, boolean error) {}
 
     @Test
     void pilotReopensTheSameMonthFromAnotherSessionAndAfterCredentialRotation() throws Exception {
@@ -1126,6 +1210,20 @@ class MarchBudgetTest {
 
         Page get(String path) throws IOException, InterruptedException {
             return request(HttpRequest.newBuilder(base.resolve(path)).GET().build());
+        }
+
+        RequestSample measure(String method, String path, int expectedStatus) throws InterruptedException {
+            var request = HttpRequest.newBuilder(base.resolve(path))
+                    .timeout(Duration.ofSeconds(5))
+                    .method(method, HttpRequest.BodyPublishers.noBody()).build();
+            long start = System.nanoTime();
+            boolean error;
+            try {
+                error = http.send(request, HttpResponse.BodyHandlers.discarding()).statusCode() != expectedStatus;
+            } catch (IOException e) {
+                error = true;
+            }
+            return new RequestSample(System.nanoTime() - start, error);
         }
 
         Page save(Document form, String draft) throws IOException, InterruptedException {
