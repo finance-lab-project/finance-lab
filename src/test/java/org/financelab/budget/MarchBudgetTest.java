@@ -58,7 +58,8 @@ class MarchBudgetTest {
             var owner = signedIn(app, "owner-a");
             var march = owner.get(MARCH);
             assertThat(march.status()).isEqualTo(200);
-            String expected = "18 446 744 073 709 551 614 ₽";
+            // Both opening buffers include the demo's 2,000-ruble food deficit from 2026.
+            String expected = "18 446 744 073 709 549 614 ₽";
             assertThat(march.html().expectFirst("#row-food .buffer").text()).isEqualTo(expected);
             var year = owner.get("/years/2027");
             assertThat(year.status()).isEqualTo(200);
