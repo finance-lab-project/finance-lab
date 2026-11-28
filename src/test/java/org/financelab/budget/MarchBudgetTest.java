@@ -634,6 +634,37 @@ class MarchBudgetTest {
             assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
             assertThat(app.getBean(JdbcClient.class).sql("SELECT period FROM category_month")
                     .query(String.class).single()).isEqualTo("2027-07");
+
+            var store = app.getBean(MonthStore.class);
+            var june = july.minusMonths(1);
+            var history = store.readHistory("owner-a", june);
+            String code = report.categories().getFirst().code();
+            assertThat(store.replaceHistory("owner-a", june, history, 0L, 0L,
+                    List.of(new MonthStore.HistoricalEdit(code, 1000, 200, true)), null)).isTrue();
+            var updated = store.readYear("owner-a", 2027, july);
+            assertThat(updated.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(updated.categories().getFirst().actual()).isEqualTo(BigInteger.valueOf(200));
+            assertThat(updated.totalBuffer()).isEqualTo(BigInteger.valueOf(800));
+        }
+    }
+
+    @Test
+    void historicalRateSupersedesOlderSettingsUntilTheNextDatedRate() {
+        try (var app = start(false, "2027-12")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 100000, '0/1', 1)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-01', 'food', 'Food', 'essential', 1, 'amount', '30000', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-07', 'food', 35000, 27000)
+                    """).update();
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 12));
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
         }
     }
 

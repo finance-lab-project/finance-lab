@@ -31,7 +31,7 @@ record YearReport(int year, YearMonth cutoff, int completedMonths, List<Month> m
 
         Category withMonth(MonthBudget.Category month, boolean completed) {
             var amount = BigInteger.valueOf(month.actual());
-            return new Category(code, month.name(), plan.add(BigInteger.valueOf(month.plan())), actual.add(amount),
+            return new Category(code, month.name(), plan, actual.add(amount),
                     completed ? completedActual.add(amount) : completedActual, buffer);
         }
 

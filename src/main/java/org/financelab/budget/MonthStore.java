@@ -7,11 +7,9 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -123,6 +121,7 @@ class MonthStore {
     private final BudgetPeriod period;
     private final JdbcClient jdbc;
     private final String readMonthSql;
+    private final String readYearPlansSql;
     private final String readHistorySql;
     private final String replaceMonthSql;
 
@@ -131,6 +130,7 @@ class MonthStore {
         this.period = period;
         this.jdbc = jdbc;
         this.readMonthSql = new ClassPathResource("sql/queries/read-month.sql").getContentAsString(StandardCharsets.UTF_8);
+        this.readYearPlansSql = new ClassPathResource("sql/queries/read-year-plans.sql").getContentAsString(StandardCharsets.UTF_8);
         this.readHistorySql = new ClassPathResource("sql/queries/read-history.sql").getContentAsString(StandardCharsets.UTF_8);
         this.replaceMonthSql = new ClassPathResource("sql/queries/replace-month.sql").getContentAsString(StandardCharsets.UTF_8);
     }
@@ -168,34 +168,9 @@ class MonthStore {
 
         var months = new ArrayList<YearReport.Month>(12);
         var categories = new LinkedHashMap<String, YearReport.Category>();
-        var rates = new LinkedHashMap<String, Long>();
         var totals = YearReport.Actuals.ZERO;
         var completedTotals = YearReport.Actuals.ZERO;
         BigInteger investmentPlan = BigInteger.ZERO;
-        // The five original catalogue entries predate settings. A first snapshot alone
-        // does not establish their start, but a later addition or a user-created key does.
-        var starts = new HashMap<String, YearMonth>();
-        jdbc.sql("""
-                SELECT category, min(since) AS since FROM planning_category
-                 WHERE owner = :owner GROUP BY category
-                HAVING category NOT IN ('housing', 'food', 'health', 'leisure', 'travel')
-                    OR min(since) > (SELECT min(since) FROM planning_settings WHERE owner = :owner)
-                """).param("owner", owner).query(rs -> {
-            starts.put(rs.getString("category"), YearMonth.parse(rs.getString("since")));
-        });
-        // A monthly rate may predate January even if settings already exist for other categories.
-        jdbc.sql("""
-                SELECT category, name, plan FROM (
-                    SELECT m.category, c.name, m.plan,
-                           row_number() OVER (PARTITION BY m.category ORDER BY m.period DESC) AS recency
-                      FROM category_month m JOIN category c ON c.code = m.category
-                     WHERE m.owner = ? AND m.period < ?
-                ) WHERE recency = 1
-                """).params(owner, january.toString()).query(rs -> {
-            String code = rs.getString("category");
-            rates.put(code, rs.getLong("plan"));
-            categories.put(code, YearReport.Category.empty(code, rs.getString("name")));
-        });
         for (int index = 0; index < 12; index++) {
             YearMonth month = january.plusMonths(index);
             MonthBudget budget = read(owner, month, current, false);
@@ -209,21 +184,8 @@ class MonthStore {
             }
             for (var row : budget.categories()) {
                 var category = categories.computeIfAbsent(row.code(), code -> YearReport.Category.empty(code, row.name()));
-                // Backfill incomplete history only when it predates any known category inception.
-                YearMonth start = starts.get(row.code());
-                if (rates.put(row.code(), row.plan()) == null && (start == null || month.isBefore(start))) {
-                    category = category.withPlan(BigInteger.valueOf(row.plan()).multiply(BigInteger.valueOf(index)));
-                }
                 categories.put(row.code(), category.withMonth(row, completed));
             }
-            // Keep each category’s last rate for months without a newer rate.
-            var observed = budget.categories().stream().map(MonthBudget.Category::code)
-                    .collect(Collectors.toSet());
-            rates.forEach((code, rate) -> {
-                if (!observed.contains(code)) {
-                    categories.put(code, categories.get(code).withPlan(BigInteger.valueOf(rate)));
-                }
-            });
         }
 
         // Carry only recorded plans forward, including records from earlier years.
@@ -238,6 +200,17 @@ class MonthStore {
             var balance = BigInteger.valueOf(rs.getLong("plan")).subtract(BigInteger.valueOf(rs.getLong("actual")));
             categories.put(code, category.withBalance(balance));
         });
+        jdbc.sql(readYearPlansSql).param("owner", owner).param("january", january.toString())
+                .param("end", nextJanuary.toString()).query(rs -> {
+                    String code = rs.getString("category");
+                    String name = rs.getString("name");
+                    var category = categories.computeIfAbsent(code, key -> YearReport.Category.empty(key, name));
+                    var first = YearMonth.parse(rs.getString("first_month"));
+                    var next = YearMonth.parse(rs.getString("next_month"));
+                    long monthsAtRate = first.until(next, ChronoUnit.MONTHS);
+                    var plan = BigInteger.valueOf(rs.getLong("plan")).multiply(BigInteger.valueOf(monthsAtRate));
+                    categories.put(code, category.withPlan(plan));
+                });
         BigInteger spendingPlan = categories.values().stream().map(YearReport.Category::plan)
                 .reduce(BigInteger.ZERO, BigInteger::add);
         return new YearReport(year, cutoff, completedMonths, List.copyOf(months), totals, completedTotals,
