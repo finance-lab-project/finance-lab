@@ -11,6 +11,7 @@
 <main class="login">
     <h1>Вход в бюджет</h1>
     <p th:if="${param.error}" role="alert" class="notice error">Неверное имя пользователя или пароль.</p>
+    <p>Имя пользователя и пароль нужны для входа. Подробнее в <a th:href="@{/privacy}">политике обработки данных</a>.</p>
     <form th:action="@{/login}" method="post">
         <label for="username">Имя пользователя</label>
         <input id="username" name="username" required autocomplete="username" autocapitalize="none" spellcheck="false">
@@ -19,5 +20,6 @@
         <button class="primary">Войти</button>
     </form>
 </main>
+<footer th:replace="~{footer :: site-footer}"></footer>
 </body>
 </html>

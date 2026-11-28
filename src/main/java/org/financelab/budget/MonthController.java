@@ -39,6 +39,11 @@ class MonthController {
         return "login";
     }
 
+    @GetMapping("/privacy")
+    String privacy() {
+        return "privacy";
+    }
+
     @GetMapping("/months")
     String select(@RequestParam int year, @RequestParam int month) {
         if (year < 1 || year > 9999 || month < 1 || month > 12) {

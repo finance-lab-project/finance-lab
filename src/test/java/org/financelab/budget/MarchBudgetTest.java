@@ -50,6 +50,36 @@ class MarchBudgetTest {
     @TempDir Path directory;
 
     @Test
+    void privacyPolicyIsAvailableBeforeSignInAndFromSignedInPages() throws Exception {
+        String password = "synthetic-privacy-test-password";
+        try (var app = startPilot(password)) {
+            var browser = new Browser(app);
+            var publicPolicy = browser.get("/privacy");
+            assertThat(publicPolicy.status()).isEqualTo(200);
+            assertThat(publicPolicy.html().select("main h2").eachText()).containsExactly(
+                    "Вход и сессия", "Данные бюджета", "Журналы приложения", "Аналитика");
+            assertThat(publicPolicy.html().select("form, script")).isEmpty();
+
+            var login = browser.get("/login");
+            assertThat(login.status()).isEqualTo(200);
+            assertThat(login.html().select("main p:has(a[href=/privacy]) + form[action=/login]")).hasSize(1);
+            assertThat(login.html().select("footer a[href=/privacy]")).hasSize(1);
+            assertThat(browser.get(MARCH).status()).isEqualTo(302);
+
+            browser.login("pilot-owner", password);
+            for (String path : List.of(MARCH, EDIT, "/settings", "/history/2027-02", "/years/2027", "/investments/2027-03", "/fire")) {
+                var page = browser.get(path);
+                assertThat(page.status()).as(path).isEqualTo(200);
+                assertThat(page.html().select("footer a[href=/privacy]")).as(path).hasSize(1);
+            }
+            var signedInPolicy = browser.get("/privacy");
+            assertThat(signedInPolicy.status()).isEqualTo(200);
+            assertThat(signedInPolicy.html().selectFirst("main").text())
+                    .isEqualTo(publicPolicy.html().selectFirst("main").text());
+        }
+    }
+
+    @Test
     void pilotReopensTheSameMonthFromAnotherSessionAndAfterCredentialRotation() throws Exception {
         String login = "pilot-owner";
         String firstPassword = "first-synthetic-pilot-password";
