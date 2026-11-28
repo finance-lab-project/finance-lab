@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS planning_category (
     FOREIGN KEY (owner, since) REFERENCES planning_settings(owner, since)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS planning_category_rollover_copy (
+    owner TEXT NOT NULL,
+    since TEXT NOT NULL,
+    category TEXT NOT NULL,
+    PRIMARY KEY (owner, since, category),
+    FOREIGN KEY (owner, since, category) REFERENCES planning_category(owner, since, category) ON DELETE CASCADE
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS investment_account (
     id INTEGER PRIMARY KEY,
     owner TEXT NOT NULL,

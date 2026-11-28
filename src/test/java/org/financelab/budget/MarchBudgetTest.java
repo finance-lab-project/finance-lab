@@ -985,6 +985,40 @@ class MarchBudgetTest {
     }
 
     @Test
+    void januaryCopyPreservesLaterHistoricalRateForTheSameCategory() {
+        YearMonth january = YearMonth.of(2028, 1);
+        try (var app = start(false, january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 30000, '0/1', 1)").update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-01', 'leisure', 'Leisure', 'discretionary', 1, 'fraction', '1/1', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-12', 'leisure', 35000, 24000)
+                    """).update();
+
+            var store = app.getBean(MonthStore.class);
+            var report = store.readYear("owner-a", 2028, january);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(report.categories()).singleElement().satisfies(leisure -> {
+                assertThat(leisure.plan()).isEqualTo(report.spendingPlan());
+                assertThat(leisure.actual()).isZero();
+            });
+            assertThat(report.totalBuffer()).isZero();
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Integer.class).single()).isEqualTo(1);
+
+            var plans = app.getBean(PlanStore.class);
+            var settings = plans.read("owner-a", january);
+            assertThat(plans.save("owner-a", january, settings.revision(),
+                    PlanCalculator.evaluate(settings.draft()))).isTrue();
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan())
+                    .isEqualTo(BigInteger.valueOf(360000));
+        }
+    }
+
+    @Test
     void yearUsesEffectiveSettingsAndRespectsCategoryInception() {
         try (var app = start(false, "2028-01")) {
             var jdbc = app.getBean(JdbcClient.class);

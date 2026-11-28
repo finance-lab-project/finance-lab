@@ -72,6 +72,18 @@ class PlanStore {
         var plan = PlanCalculator.evaluate(withHistoricalAverages(owner, january, saved));
         // Rollover records settings only. Existing month rows retain their recorded plans.
         saveCategories(owner, january.toString(), plan, false, false);
+        // An unchanged allocation in a copied snapshot does not set a new effective rate.
+        jdbc.sql("""
+                INSERT INTO planning_category_rollover_copy (owner, since, category)
+                SELECT next.owner, next.since, next.category
+                  FROM planning_category next
+                  JOIN planning_category previous ON previous.owner = next.owner
+                   AND previous.category = next.category AND previous.plan = next.plan
+                 WHERE next.owner = :owner AND next.since = :january
+                   AND previous.since = (
+                       SELECT max(since) FROM planning_settings WHERE owner = :owner AND since < :january
+                   )
+                """).param("owner", owner).param("january", january.toString()).update();
     }
 
     // Called within the month write transaction so the new plans and historical figures commit together.

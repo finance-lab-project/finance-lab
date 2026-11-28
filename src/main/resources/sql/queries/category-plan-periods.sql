@@ -19,6 +19,8 @@ WITH first_settings AS (
     SELECT p.category, p.since, p.plan FROM planning_category p
      WHERE p.owner = :owner AND p.since <= :last
        AND NOT EXISTS (SELECT 1 FROM monthly_rates m WHERE m.category = p.category AND m.period = p.since)
+       AND NOT EXISTS (SELECT 1 FROM planning_category_rollover_copy c WHERE c.owner = p.owner
+                        AND c.since = p.since AND c.category = p.category)
 ), periods AS (
     SELECT r.*, i.start,
            row_number() OVER (PARTITION BY r.category ORDER BY r.period) AS ordinal,
