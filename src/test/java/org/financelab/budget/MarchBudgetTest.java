@@ -123,7 +123,7 @@ class MarchBudgetTest {
             assertThat(accounts.select("legend").eachText()).containsExactly("Учебный вклад", "Учебный брокерский счёт");
             assertInvestmentFigures(accounts.getFirst(), "", "");
             assertThat(accounts.getFirst().text()).contains("Нет записи за этот месяц.");
-            var coupon = Map.of("closingValue", "101 500", "creditedIncome", "1500");
+            var coupon = Map.of("closingValue", "101\u00a0500\u00a0₽", "creditedIncome", "1\u00a0500\u00a0₽");
             assertThat(desktop.postForm(accounts.getFirst(), coupon).status()).isEqualTo(302);
             assertThat(desktop.postForm(accounts.getLast(), Map.of("closingValue", "40000", "creditedIncome", "0"))
                     .status()).isEqualTo(302);
@@ -327,6 +327,7 @@ class MarchBudgetTest {
             assertThat(owner.save(rejected.html(), Map.of("income", "30\u00a0000\u00a0₽",
                     "contributions", "0\u00a0₽")).status()).isEqualTo(302);
             assertThat(owner.get(MARCH).html().expectFirst("#actual-income").text()).isEqualTo("30 000 ₽");
+            assertThat(owner.save(edit, Map.of("income", "1\u00a00003 00\u00a0₽")).status()).isEqualTo(422);
 
             String past = "/history/2026-11";
             Document history = owner.get(past).html();
@@ -802,10 +803,10 @@ class MarchBudgetTest {
         try (var app = start(false)) {
             var owner = signedIn(app, "owner-a");
             Document settings = owner.get("/settings").html();
-            var food = new PlanDraft.Row("", "Продукты", "essential", "amount", "4000");
+            var food = new PlanDraft.Row("", "Продукты", "essential", "amount", "4\u00a0000\u00a0₽");
             var health = new PlanDraft.Row("", "Здоровье", "essential", "amount", "1000");
             var leisure = new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "100");
-            assertThat(owner.plan(settings, new PlanDraft("10000", "incomePercent", "40", List.of(food, health, leisure)))
+            assertThat(owner.plan(settings, new PlanDraft("10\u00a0000\u00a0₽", "incomePercent", "40", List.of(food, health, leisure)))
                     .status()).isEqualTo(204);
             String code = settingsDraft(owner.get("/settings").html()).rows().getFirst().code();
             String planKey = "plan-" + code;

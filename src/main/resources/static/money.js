@@ -1,6 +1,7 @@
 const moneyFields = "input[data-money]";
 const moneySuffix = "\u00a0₽";
 const moneySpaces = /[ \u00a0\u202f]/g;
+const moneyPattern = /^[+−-]?(?:\d+|\d{1,3}(?:[ \u00a0\u202f]\d{3})+)(?:[,.]\d*)?$/;
 
 function moneyNumber(value) {
     return value.trim().replace(/[ \u00a0\u202f]*₽$/, "");
@@ -9,7 +10,7 @@ function moneyNumber(value) {
 function formatMoney(value) {
     const number = moneyNumber(value);
     if (!number && !value.includes("₽")) return "";
-    if (!/^[+−-]?(?:\d+|\d{1,3}(?:[ \u00a0\u202f]\d{3})+)(?:[,.]\d*)?$/.test(number)) return value;
+    if (!moneyPattern.test(number)) return value;
     const [whole, fraction] = number.replace(moneySpaces, "").replace("-", "−").split(/[,.]/);
     const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
     return grouped + (fraction === undefined ? "" : "," + fraction) + moneySuffix;
@@ -42,11 +43,18 @@ document.addEventListener("beforeinput", event => {
 document.addEventListener("input", event => {
     const input = event.target;
     if (!input.matches(moneyFields) || event.isComposing) return;
-    const previous = moneyEdits.get(input);
+    let previous = moneyEdits.get(input);
     moneyEdits.delete(input);
     let value = input.value;
     let caret = input.selectionStart;
+    if (!previous && event.inputType === "deleteContentBackward" && caret === value.length
+            && value.endsWith("\u00a0") && moneyPattern.test(value.slice(0, -1))) {
+        // The browser removed the currency symbol without sending beforeinput.
+        previous = {value: value + "₽", start: caret + 1, end: caret + 1};
+    }
     if (previous?.value.endsWith(moneySuffix) && event.inputType !== "historyUndo" && event.inputType !== "historyRedo") {
+        if (event.inputType === "insertFromPaste"
+                && !moneyPattern.test(moneyNumber(value.slice(previous.start, caret)))) return;
         const end = previous.value.length - moneySuffix.length;
         const collapsed = previous.start === previous.end;
         const backward = collapsed && event.inputType === "deleteContentBackward";

@@ -18,10 +18,10 @@ function editor(initial = "") {
         addEventListener: (type, handler) => { handlers[type] = handler; }
     };
     vm.runInNewContext(fs.readFileSync("src/main/resources/static/money.js", "utf8"), {document});
-    const edit = (start, end, text, inputType) => {
+    const edit = (start, end, text, inputType, withBeforeInput = true) => {
         input.setSelectionRange(start, end);
         const event = {target: input, inputType};
-        handlers.beforeinput(event);
+        if (withBeforeInput) handlers.beforeinput(event);
         if (start === end && inputType === "deleteContentBackward") start--;
         if (start === end && inputType === "deleteContentForward") end++;
         input.value = input.value.slice(0, start) + text + input.value.slice(end);
@@ -50,6 +50,20 @@ test("middle insertion and deletion keep the caret next to the edited digits", (
     assert.equal(input.selectionStart, 2);
 });
 
+test("raw paste into an empty field formats the amount", () => {
+    const {input, edit} = editor();
+    edit(0, 0, "30000", "insertFromPaste");
+    assert.equal(input.value, "30\u00a0000\u00a0₽");
+    assert.equal(input.selectionStart, 6);
+});
+
+test("partial paste preserves malformed grouping for validation", () => {
+    const {input, edit} = editor("1000");
+    edit(5, 5, "3 00", "insertFromPaste");
+    assert.equal(input.value, "1\u00a00003 00\u00a0₽");
+    assert.equal(input.selectionStart, 9);
+});
+
 test("backspace can clear explicit zero, including from the end of the suffix", () => {
     const {input, edit} = editor();
     assert.equal(input.value, "");
@@ -66,4 +80,11 @@ test("money formatting retains fractional digits and invalid input for validatio
     assert.equal(input.value, "−30\u00a0000,01\u00a0₽");
     edit(0, input.value.length, "3 00", "insertFromPaste");
     assert.equal(input.value, "3 00");
+});
+
+test("backspace without beforeinput clears zero and resets the caret", () => {
+    const {input, edit} = editor("0");
+    edit(input.value.length, input.value.length, "", "deleteContentBackward", false);
+    assert.equal(input.value, "");
+    assert.equal(input.selectionStart, 0);
 });

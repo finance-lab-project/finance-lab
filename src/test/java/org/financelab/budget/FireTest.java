@@ -156,7 +156,7 @@ class FireTest {
             assertThat(withoutTarget.select("#fire-missing-balances, #capital-percentage")).isEmpty();
 
             mvc.perform(post("/fire/goals/capital").session(desktop).principal(() -> "owner-a")
-                    .param("amount", "30 000 000")).andExpect(status().isFound());
+                    .param("amount", "30\u00a0000\u00a0000\u00a0₽")).andExpect(status().isFound());
             mvc.perform(post("/fire/goals/income").session(phone).principal(() -> "owner-a")
                     .param("amount", "100 000")).andExpect(status().isFound());
             var progress = page(mvc, phone, "owner-a");
