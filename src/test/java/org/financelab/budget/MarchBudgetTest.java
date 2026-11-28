@@ -653,6 +653,8 @@ class MarchBudgetTest {
         try (var app = startReportTest("demo", "2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var report = reviewPage(mvc, "/years/2027");
+            assertThat(report.select("#average-income, #average-contributions").eachText())
+                    .containsExactly("Нет данных 0 из 12 мес.", "Нет данных 0 из 12 мес.");
             assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 500 ₽ 2 из 12 мес.");
             assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("5 500 ₽ 2 из 12 мес.");
             var form = reviewPage(mvc, "/history/2027-03").expectFirst("#history-form");
@@ -663,6 +665,8 @@ class MarchBudgetTest {
         try (var app = startReportTest("demo", "2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var report = reviewPage(mvc, "/years/2027");
+            assertThat(report.select("#average-income, #average-contributions").eachText())
+                    .containsExactly("Нет данных 0 из 12 мес.", "Нет данных 0 из 12 мес.");
             assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 000 ₽ 3 из 12 мес.");
             assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("3 667 ₽ 3 из 12 мес.");
             var unseededReport = Jsoup.parse(mvc.perform(get("/years/2027").principal(() -> "owner-b"))
@@ -679,6 +683,8 @@ class MarchBudgetTest {
         try (var app = startReportTest("demo", "2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var report = reviewPage(mvc, "/years/2027");
+            assertThat(report.select("#average-income, #average-contributions").eachText())
+                    .containsExactly("83 333 ₽ 3 из 12 мес.", "30 000 ₽ 3 из 12 мес.");
             assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 000 ₽ 3 из 12 мес.");
             assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("3 667 ₽ 3 из 12 мес.");
         }
