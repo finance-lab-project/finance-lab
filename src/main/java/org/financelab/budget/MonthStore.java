@@ -183,24 +183,22 @@ class MonthStore {
                 """).param("owner", owner).query(rs -> {
             starts.put(rs.getString("category"), YearMonth.parse(rs.getString("since")));
         });
+        // A monthly rate may predate January even if settings already exist for other categories.
+        jdbc.sql("""
+                SELECT category, name, plan FROM (
+                    SELECT m.category, c.name, m.plan,
+                           row_number() OVER (PARTITION BY m.category ORDER BY m.period DESC) AS recency
+                      FROM category_month m JOIN category c ON c.code = m.category
+                     WHERE m.owner = ? AND m.period < ?
+                ) WHERE recency = 1
+                """).params(owner, january.toString()).query(rs -> {
+            String code = rs.getString("category");
+            rates.put(code, rs.getLong("plan"));
+            categories.put(code, YearReport.Category.empty(code, rs.getString("name")));
+        });
         for (int index = 0; index < 12; index++) {
             YearMonth month = january.plusMonths(index);
             MonthBudget budget = read(owner, month, current, false);
-            if (index == 0 && budget.terms() == null) {
-                // Monthly records before January supply the opening rates when settings are absent.
-                jdbc.sql("""
-                        SELECT category, name, plan FROM (
-                            SELECT m.category, c.name, m.plan,
-                                   row_number() OVER (PARTITION BY m.category ORDER BY m.period DESC) AS recency
-                              FROM category_month m JOIN category c ON c.code = m.category
-                             WHERE m.owner = ? AND m.period < ?
-                        ) WHERE recency = 1
-                        """).params(owner, january.toString()).query(rs -> {
-                    String code = rs.getString("category");
-                    rates.put(code, rs.getLong("plan"));
-                    categories.put(code, YearReport.Category.empty(code, rs.getString("name")));
-                });
-            }
             YearReport.Actuals actuals = YearReport.Actuals.from(budget);
             months.add(new YearReport.Month(month, actuals));
             totals = totals.plus(actuals);
@@ -218,16 +216,14 @@ class MonthStore {
                 }
                 categories.put(row.code(), category.withMonth(row, completed));
             }
-            if (budget.terms() == null) {
-                // With monthly history alone, the last recorded rate applies until the next one appears.
-                var observed = budget.categories().stream().map(MonthBudget.Category::code)
-                        .collect(Collectors.toSet());
-                rates.forEach((code, rate) -> {
-                    if (!observed.contains(code)) {
-                        categories.put(code, categories.get(code).withPlan(BigInteger.valueOf(rate)));
-                    }
-                });
-            }
+            // Keep each category’s last rate for months without a newer rate.
+            var observed = budget.categories().stream().map(MonthBudget.Category::code)
+                    .collect(Collectors.toSet());
+            rates.forEach((code, rate) -> {
+                if (!observed.contains(code)) {
+                    categories.put(code, categories.get(code).withPlan(BigInteger.valueOf(rate)));
+                }
+            });
         }
 
         // Carry only recorded plans forward, including records from earlier years.

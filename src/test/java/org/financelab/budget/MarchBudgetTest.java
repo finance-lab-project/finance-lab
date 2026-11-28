@@ -627,10 +627,36 @@ class MarchBudgetTest {
             assertThat(report.categories()).singleElement().satisfies(row -> {
                 assertThat(row.plan()).isEqualTo(BigInteger.valueOf(6000));
                 assertThat(row.actual()).isZero();
+                assertThat(row.buffer()).isZero();
             });
+            assertThat(report.months().subList(0, 6)).extracting(YearReport.Month::actuals)
+                    .containsOnly(YearReport.Actuals.ZERO);
             assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
             assertThat(app.getBean(JdbcClient.class).sql("SELECT period FROM category_month")
                     .query(String.class).single()).isEqualTo("2027-07");
+        }
+    }
+
+    @Test
+    void monthlyCategoryRateContinuesAcrossAnotherCategorySettingsAndJanuary() {
+        YearMonth december = YearMonth.of(2027, 12);
+        try (var app = start(false, december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-11', 'food', 30000, 24000)
+                    """).update();
+            var draft = new PlanDraft("100000", "fraction", "0/1", List.of(
+                    new PlanDraft.Row("", "Books", "essential", "amount", "1000")));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", december, 0, PlanCalculator.evaluate(draft))).isTrue();
+            var store = app.getBean(MonthStore.class);
+            var year = store.readYear("owner-a", 2027, december);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(361000));
+            assertThat(year.categories()).filteredOn(row -> row.code().equals("food")).singleElement()
+                    .satisfies(food -> assertThat(food.plan()).isEqualTo(BigInteger.valueOf(360000)));
+            var next = store.readYear("owner-a", 2028, december.plusMonths(1));
+            assertThat(next.spendingPlan()).isEqualTo(BigInteger.valueOf(372000));
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Integer.class).single()).isEqualTo(2);
         }
     }
 
