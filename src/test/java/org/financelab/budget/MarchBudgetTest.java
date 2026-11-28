@@ -1,6 +1,7 @@
 package org.financelab.budget;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
@@ -564,6 +565,681 @@ class MarchBudgetTest {
             assertThat(report.select("#row-food td").eachText())
                     .containsExactly("288 000 ₽", "73 000 ₽", "24 000 ₽ 12 из 12 мес.", "−2 000 ₽");
             assertThat(other.get(path).html().expectFirst("#year-spending").text()).isEqualTo("131 000 ₽");
+        }
+    }
+
+    @Test
+    void yearProjectsSparseMonthlyRatesWithoutRecordingMissingMonths() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2027-11', 'food', 30000, 25000),
+                        ('owner-a', '2027-12', 'food', 30000, 27000),
+                        ('owner-b', '2027-01', 'food', 30000, 0),
+                        ('owner-b', '2027-07', 'food', 35000, 0)
+                    """).update();
+            var store = app.getBean(MonthStore.class);
+            YearMonth january = YearMonth.of(2028, 1);
+            var late = store.readYear("owner-a", 2027, january);
+            assertThat(late.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+            assertThat(late.categories()).singleElement().satisfies(category -> {
+                assertThat(category.plan()).isEqualTo(late.spendingPlan());
+                assertThat(category.actual()).isEqualTo(BigInteger.valueOf(52000));
+                assertThat(category.buffer()).isEqualTo(BigInteger.valueOf(8000));
+            });
+            assertThat(late.months().getFirst().actuals()).isEqualTo(YearReport.Actuals.ZERO);
+            assertThat(store.readYear("owner-b", 2027, january).spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Long.class).single()).isEqualTo(4L);
+            assertThat(jdbc.sql("SELECT count(*) FROM month_actuals").query(Long.class).single()).isZero();
+        }
+    }
+
+    @Test
+    void yearUsesLatestMonthlyRateBeforeJanuaryWithoutRecordingProjections() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2026-11', 'food', 20000, 20000),
+                        ('owner-a', '2026-12', 'food', 30000, 25000),
+                        ('owner-a', '2027-07', 'food', 35000, 27000),
+                        ('owner-b', '2026-12', 'food', 45000, 45000)
+                    """).update();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2028, 1));
+
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
+            assertThat(report.categories()).singleElement().satisfies(category -> {
+                assertThat(category.plan()).isEqualTo(report.spendingPlan());
+                assertThat(category.actual()).isEqualTo(BigInteger.valueOf(27000));
+            });
+            assertThat(report.totalBuffer()).isEqualTo(BigInteger.valueOf(13000));
+            assertThat(report.months()).filteredOn(month -> month.period().getMonthValue() != 7)
+                    .extracting(YearReport.Month::actuals).containsOnly(YearReport.Actuals.ZERO);
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Long.class).single()).isEqualTo(4L);
+            assertThat(jdbc.sql("SELECT count(*) FROM month_actuals").query(Long.class).single()).isZero();
+        }
+    }
+
+    @Test
+    void upgradeKeepsAmbiguousLegacyZeroRateUntilOwnerCorrectsIt() throws Exception {
+        var december = YearMonth.of(2027, 12);
+        try (var app = startCashTest(december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("DROP TABLE category_month_inherited_plan").update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual, revision) VALUES
+                        ('owner-a', '2027-08', 'food', 0, 500, 1),
+                        ('owner-a', '2027-11', 'food', 30000, 0, 0),
+                        ('owner-a', '2027-12', 'food', 30000, 0, 0)
+                    """).update();
+        }
+        try (var app = startCashTest(december.toString())) {
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.readYear("owner-a", 2027, december).spendingPlan()).isEqualTo(BigInteger.valueOf(60000));
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/history/2027-08").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-food").val()).isEqualTo("0");
+            cashPost(mvc, form, Map.of("plan-food", "30000")).andExpect(status().isFound());
+        }
+        try (var app = startCashTest(december.toString())) {
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2027, december);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+            assertThat(report.categories()).singleElement().satisfies(food ->
+                    assertThat(food.actual()).isEqualTo(BigInteger.valueOf(500)));
+        }
+    }
+
+    @Test
+    void earlierHistoryDoesNotMoveReservedCategoryInception() throws Exception {
+        try (var app = startCashTest("2027-08")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 100000, '0/1', 1),
+                                                         ('owner-a', '2027-07', 100000, '0/1', 2)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-07', 'health', 'Health', 'essential', 1, 'amount', '1000', 1000)
+                    """).update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/history/2027-06").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-health").val()).isEmpty();
+            cashPost(mvc, form, Map.of("amount-health", "200")).andExpect(status().isFound());
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 8));
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(year.categories()).singleElement().satisfies(health -> {
+                assertThat(health.plan()).isEqualTo(year.spendingPlan());
+                assertThat(health.actual()).isEqualTo(BigInteger.valueOf(200));
+            });
+
+            form = reviewPage(mvc, "/history/2027-06").expectFirst("#history-form");
+            cashPost(mvc, form, Map.of("plan-health", "1000")).andExpect(status().isFound());
+            var updated = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 8));
+            assertThat(updated.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(updated.categories()).singleElement().satisfies(health -> {
+                assertThat(health.plan()).isEqualTo(updated.spendingPlan());
+                assertThat(health.actual()).isEqualTo(BigInteger.valueOf(200));
+            });
+        }
+    }
+
+    @Test
+    void firstSettingsSaveStartsNewCategoryInItsCreationMonth() {
+        YearMonth july = YearMonth.of(2027, 7);
+        try (var app = start(false, july.toString())) {
+            var draft = new PlanDraft("100000", "fraction", "0/1", List.of(
+                    new PlanDraft.Row("", "Books", "essential", "amount", "1000")));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", july, 0, PlanCalculator.evaluate(draft))).isTrue();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2027, july);
+            assertThat(report.categories()).singleElement().satisfies(row -> {
+                assertThat(row.plan()).isEqualTo(BigInteger.valueOf(6000));
+                assertThat(row.actual()).isZero();
+                assertThat(row.buffer()).isZero();
+            });
+            assertThat(report.months().subList(0, 6)).extracting(YearReport.Month::actuals)
+                    .containsOnly(YearReport.Actuals.ZERO);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            var jdbc = app.getBean(JdbcClient.class);
+            assertThat(jdbc.sql("SELECT period FROM category_month")
+                    .query(String.class).single()).isEqualTo("2027-07");
+            assertThat(jdbc.sql("SELECT count(*) FROM cash_movement").query(Long.class).single()).isZero();
+
+            var store = app.getBean(MonthStore.class);
+            var june = july.minusMonths(1);
+            var history = store.readHistory("owner-a", june);
+            String code = report.categories().getFirst().code();
+            assertThat(store.replaceHistory("owner-a", june, history, 0L, 0L,
+                    List.of(new MonthStore.HistoricalEdit(code, 1000, 200, true, true)), null)).isTrue();
+            var updated = store.readYear("owner-a", 2027, july);
+            assertThat(updated.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(updated.categories().getFirst().actual()).isEqualTo(BigInteger.valueOf(200));
+            assertThat(updated.totalBuffer()).isEqualTo(BigInteger.valueOf(800));
+        }
+    }
+
+    @Test
+    void historyFormPreservesEffectiveRateForActualOnlyEntriesAndAcceptsExplicitZero() throws Exception {
+        YearMonth july = YearMonth.of(2027, 7);
+        YearMonth october = YearMonth.of(2027, 10);
+        var draft = new PlanDraft("100000", "fraction", "0/1", List.of(
+                new PlanDraft.Row("", "Books", "essential", "amount", "1000")));
+        try (var app = start(false, july.toString())) {
+            assertThat(app.getBean(PlanStore.class).save("owner-a", july, 0, PlanCalculator.evaluate(draft))).isTrue();
+        }
+
+        try (var app = start(false, october.toString())) {
+            var owner = signedIn(app, "owner-a");
+            var store = app.getBean(MonthStore.class);
+            String code = store.readYear("owner-a", 2027, october).categories().getFirst().code();
+            String planKey = "plan-" + code;
+            String actualKey = "amount-" + code;
+            String august = "/history/2027-08";
+            var form = owner.get(august).html();
+            assertThat(form.expectFirst("#" + planKey).val()).isEmpty();
+            assertThat(owner.saveHistory(form, Map.of(actualKey, "200")).status()).isEqualTo(302);
+            var report = store.readYear("owner-a", 2027, october);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(report.categories()).singleElement().satisfies(row -> {
+                assertThat(row.plan()).isEqualTo(report.spendingPlan());
+                assertThat(row.actual()).isEqualTo(BigInteger.valueOf(200));
+            });
+
+            assertThat(owner.saveHistory(owner.get(august).html(), Map.of(planKey, "0")).status()).isEqualTo(302);
+            assertThat(owner.saveHistory(owner.get("/history/2027-09").html(),
+                    Map.of(actualKey, "100")).status()).isEqualTo(302);
+            assertThat(store.readYear("owner-a", 2027, october).spendingPlan()).isEqualTo(BigInteger.valueOf(1000));
+        }
+    }
+
+    @Test
+    void laterActualSavedBeforeHistoricalRateChangeDoesNotEndThatRate() throws Exception {
+        YearMonth september = YearMonth.of(2027, 9);
+        try (var app = start(false, september.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 100000, '0/1', 1)").update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-01', 'food', 'Food', 'essential', 1, 'amount', '30000', 30000)
+                    """).update();
+
+            var owner = signedIn(app, "owner-a");
+            String august = "/history/2027-08";
+            String july = "/history/2027-07";
+            assertThat(owner.saveHistory(owner.get(august).html(), Map.of("amount-food", "1000")).status())
+                    .isEqualTo(302);
+            assertThat(owner.saveHistory(owner.get(july).html(), Map.of("plan-food", "35000")).status())
+                    .isEqualTo(302);
+
+            var store = app.getBean(MonthStore.class);
+            var report = store.readYear("owner-a", 2027, september);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
+            assertThat(report.categories()).singleElement().satisfies(food -> {
+                assertThat(food.plan()).isEqualTo(report.spendingPlan());
+                assertThat(food.actual()).isEqualTo(BigInteger.valueOf(1000));
+            });
+
+            var savedAugust = owner.get(august).html();
+            assertThat(savedAugust.expectFirst("#plan-food").val()).isEmpty();
+            assertThat(owner.saveHistory(savedAugust, Map.of("amount-food", "1200")).status()).isEqualTo(302);
+            assertThat(store.readYear("owner-a", 2027, september).spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
+
+            assertThat(owner.saveHistory(owner.get(august).html(), Map.of("plan-food", "0")).status())
+                    .isEqualTo(302);
+            assertThat(store.readYear("owner-a", 2027, september).spendingPlan()).isEqualTo(BigInteger.valueOf(215000));
+        }
+    }
+
+    @Test
+    void historyFormBackfillsFirstLegacyRateForEarlierActual() throws Exception {
+        YearMonth december = YearMonth.of(2027, 12);
+        try (var app = start(false, december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES ('owner-a', '2027-11', 100000, '0/1', 1)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                      ('owner-a', '2027-11', 'food', 'Food', 'essential', 1, 'amount', '30000', 30000)
+                    """).update();
+            var owner = signedIn(app, "owner-a");
+            var store = app.getBean(MonthStore.class);
+            String october = "/history/2027-10";
+            var form = owner.get(october).html();
+            assertThat(form.expectFirst("#plan-food").val()).isEmpty();
+            assertThat(owner.saveHistory(form, Map.of("amount-food", "200")).status()).isEqualTo(302);
+
+            var report = store.readYear("owner-a", 2027, december);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+            assertThat(report.categories()).singleElement().satisfies(row -> {
+                assertThat(row.plan()).isEqualTo(report.spendingPlan());
+                assertThat(row.actual()).isEqualTo(BigInteger.valueOf(200));
+                assertThat(row.buffer()).isEqualTo(BigInteger.valueOf(-200));
+            });
+            assertThat(store.read("owner-a", december.minusMonths(1)).categories()).singleElement()
+                    .satisfies(row -> assertThat(row.buffer()).isEqualTo(-200L));
+
+            assertThat(owner.saveHistory(owner.get(october).html(), Map.of("plan-food", "0")).status())
+                    .isEqualTo(302);
+            assertThat(store.readYear("owner-a", 2027, december).spendingPlan())
+                    .isEqualTo(BigInteger.valueOf(60000));
+        }
+    }
+
+    @Test
+    void backdatedDecemberRateCarriesThroughAlreadyOpenedJanuaryAndTheFollowingYear() throws Exception {
+        try (var app = startCashTest("2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 32000, '0/1', 1)").update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a','2027-01','travel','Travel','discretionary',1,'fraction','1/1',30000),
+                        ('owner-a','2027-01','food','Food','essential',2,'amount','1000',1000),
+                        ('owner-a','2027-01','health','Health','essential',3,'amount','1000',1000)
+                    """).update();
+            var store = app.getBean(MonthStore.class);
+            var january = YearMonth.of(2028, 1);
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isEqualTo(BigInteger.valueOf(384000));
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var januaryForm = reviewPage(mvc, "/months/2028-01?edit=true").expectFirst("#month-form");
+            cashPost(mvc, januaryForm, Map.of("amount-travel", "800")).andExpect(status().isFound());
+            var form = reviewPage(mvc, "/history/2027-12").expectFirst("#history-form");
+            cashPost(mvc, form, Map.of("plan-travel", "35000", "amount-food", "24000", "amount-health", "0")).andExpect(status().isFound());
+            assertThat(store.readYear("owner-a", 2028, january).categories()).filteredOn(r -> r.code().equals("travel"))
+                    .singleElement().satisfies(r -> assertThat(r.plan()).isEqualTo(BigInteger.valueOf(420000)));
+            assertThat(store.read("owner-a", january).categories()).filteredOn(r -> r.code().equals("travel")).singleElement()
+                    .satisfies(travel -> assertThat(travel.plan()).isEqualTo(35000L));
+            assertThat(jdbc.sql("""
+                    SELECT plan, actual FROM category_month WHERE owner = 'owner-a'
+                      AND period = '2028-01' AND category = 'travel'
+                    """).query((rs, row) -> List.of(rs.getLong(1), rs.getLong(2))).single())
+                    .containsExactly(30000L, 800L);
+        }
+        try (var app = startCashTest("2029-01")) {
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2029, YearMonth.of(2029, 1));
+            assertThat(report.categories()).filteredOn(r -> r.code().equals("travel"))
+                    .singleElement().satisfies(r -> assertThat(r.plan()).isEqualTo(BigInteger.valueOf(420000)));
+        }
+    }
+
+    @Test
+    void historyOnlyCategoryCanBeEditedAfterOpeningTheNextYear() throws Exception {
+        try (var app = startCashTest("2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a','2027-11','food',30000,30000)
+                    """).update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            assertFood(reviewPage(mvc, "/months/2028-01"), "30 000", "0");
+            var form = reviewPage(mvc, "/history/2027-12").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-food").val()).isEmpty();
+            assertThat(form.expectFirst("#amount-food").val()).isEmpty();
+            cashPost(mvc, form, Map.of("plan-food", "35000", "amount-food", "24000")).andExpect(status().isFound());
+            assertFood(reviewPage(mvc, "/months/2027-12"), "35 000", "0");
+            assertFood(reviewPage(mvc, "/months/2028-01"), "35 000", "11 000");
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2028, YearMonth.of(2028, 1));
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(year.categories()).singleElement().satisfies(food -> assertThat(food.actual()).isZero());
+            assertThat(jdbc.sql("SELECT period FROM category_month ORDER BY period").query(String.class).list())
+                    .containsExactly("2027-11", "2027-12");
+            assertThat(jdbc.sql("SELECT period, amount FROM cash_movement").query((rs, row) ->
+                    List.of(rs.getString("period"), rs.getString("amount"))).single())
+                    .containsExactly("2027-12", "-24000");
+        }
+    }
+
+    @Test
+    void editingIncomeKeepsAnUntouchedHistoryOnlyCategoryProjected() throws Exception {
+        try (var app = startCashTest("2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a','2027-12','travel',35000,24000)
+                    """).update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/months/2028-01?edit=true").expectFirst("#month-form");
+            assertThat(form.expectFirst("#row-travel .plan").text()).isEqualTo("35 000 ₽");
+            assertThat(form.expectFirst("#row-travel .buffer").text()).isEqualTo("11 000 ₽");
+            assertThat(form.expectFirst("#amount-travel").val()).isEmpty();
+            cashPost(mvc, form, Map.of("income", "1000")).andExpect(status().isFound());
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month WHERE owner = 'owner-a' AND period = '2028-01'")
+                    .query(Integer.class).single()).isZero();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2028, YearMonth.of(2028, 2));
+            assertThat(report.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+        }
+    }
+
+    @Test
+    void sameMonthSettingsPreserveExplicitRatesAndTheHistoryForm() throws Exception {
+        var january = YearMonth.of(2028, 1);
+        try (var app = startCashTest("2028-02")) {
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2028-01', 'food', 0, 2300), ('owner-a', '2028-01', 'health', 1000, 100)
+                    """).update();
+            var settings = new PlanDraft("100000", "fraction", "0/1", List.of(
+                    new PlanDraft.Row("food", "Food", "essential", "amount", "30000"),
+                    new PlanDraft.Row("health", "Health", "essential", "amount", "2000")));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", january, 0,
+                    PlanCalculator.evaluate(settings))).isTrue();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2028, january.plusMonths(1));
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(12000));
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/history/2028-01").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-food").val()).isEqualTo("0");
+            assertThat(form.expectFirst("#plan-health").val().replace("\u00a0", "")).isEqualTo("1000");
+            assertThat(form.expectFirst("#amount-food").val().replace("\u00a0", "")).isEqualTo("2300");
+        }
+    }
+
+    @Test
+    void savingDecemberSettingsPreservesLaterExplicitLegacyRates() {
+        var december = YearMonth.of(2027, 12);
+        try (var app = start(false, december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2028-01', 'food', 0, 2300),
+                        ('owner-a', '2028-07', 'food', 1000, 100)
+                    """).update();
+            var settings = new PlanDraft("100000", "fraction", "0/1", List.of(
+                    new PlanDraft.Row("food", "Food", "essential", "amount", "30000")));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", december, 0,
+                    PlanCalculator.evaluate(settings))).isTrue();
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2028, december);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(year.categories()).singleElement().satisfies(food ->
+                    assertThat(food.actual()).isEqualTo(BigInteger.valueOf(2400)));
+        }
+    }
+
+    @Test
+    void januaryRolloverAndHistoryCorrectionPreserveExplicitLegacyZero() throws Exception {
+        YearMonth january = YearMonth.of(2028, 1);
+        try (var app = start(false, january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-12', 100000, '0/1', 1)").update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-12', 'food', 'Food', 'essential', 1, 'amount', '30000', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-12', 'food', 30000, 120000),
+                           ('owner-a', '2028-01', 'food', 0, 2300)
+                    """).update();
+
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isZero();
+
+            var owner = signedIn(app, "owner-a");
+            String december = "/history/2027-12";
+            assertThat(owner.saveHistory(owner.get(december).html(), Map.of("amount-food", "144000")).status())
+                    .isEqualTo(302);
+            assertThat(app.getBean(PlanStore.class).read("owner-a", january).draft().rows())
+                    .singleElement().satisfies(food -> assertThat(food.value()).isEqualTo("12000"));
+
+            var report = store.readYear("owner-a", 2028, january);
+            assertThat(report.categories()).singleElement().satisfies(food -> {
+                assertThat(food.plan()).isZero();
+                assertThat(food.actual()).isEqualTo(BigInteger.valueOf(2300));
+            });
+            assertThat(report.spendingPlan()).isZero();
+            assertThat(jdbc.sql("""
+                    SELECT plan, actual FROM category_month
+                     WHERE owner = 'owner-a' AND period = '2028-01' AND category = 'food'
+                    """).query((rs, i) -> List.of(rs.getLong(1), rs.getLong(2))).single())
+                    .containsExactly(0L, 2300L);
+        }
+    }
+
+    @Test
+    void laterSettingsCannotEraseAnEarlierLegacyPlan() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                      ('owner-a', '2027-11', 'food', 30000, 100), ('owner-a', '2027-12', 'food', 30000, 150)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES
+                      ('owner-a', '2027-05', 100000, '0/1', 1), ('owner-a', '2028-01', 100000, '0/1', 2)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                      ('owner-a', '2028-01', 'food', 'Food', 'essential', 1, 'amount', '32000', 32000)
+                    """).update();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2028, 1));
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+        }
+    }
+
+    @Test
+    void projectsRatesThroughTheLastSupportedDecember() {
+        try (var app = start(false, "2027-03")) {
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '9999-11', 'food', 30000, 0), ('owner-a', '9999-12', 'food', 35000, 0)
+                    """).update();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 9999, YearMonth.of(2027, 3));
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(365000));
+        }
+    }
+
+    @Test
+    void historicalRateSupersedesOlderSettingsUntilTheNextDatedRate() throws Exception {
+        try (var app = startCashTest("2027-08")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 100000, '0/1', 1)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-01', 'food', 'Food', 'essential', 1, 'amount', '30000', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-07', 'food', 35000, 27000)
+                    """).update();
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 12));
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
+
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/months/2027-08?edit=true");
+            var fields = monthFields(form);
+            fields.put("amount-food", "1000");
+            var request = post("/months/2027-08").principal(() -> "owner-a");
+            fields.forEach(request::param);
+            mvc.perform(request).andExpect(status().isFound());
+            assertThat(jdbc.sql("SELECT plan FROM category_month WHERE owner = 'owner-a' AND period = '2027-08'")
+                    .query(Long.class).single()).isEqualTo(35000L);
+            assertThat(app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 8)).spendingPlan())
+                    .isEqualTo(BigInteger.valueOf(390000));
+        }
+    }
+
+    @Test
+    void monthlyCategoryRateContinuesAcrossAnotherCategorySettingsAndJanuary() {
+        YearMonth december = YearMonth.of(2027, 12);
+        try (var app = start(false, december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-11', 'food', 30000, 24000)
+                    """).update();
+            var draft = new PlanDraft("100000", "fraction", "0/1", List.of(
+                    new PlanDraft.Row("", "Books", "essential", "amount", "1000")));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", december, 0, PlanCalculator.evaluate(draft))).isTrue();
+            var store = app.getBean(MonthStore.class);
+            var year = store.readYear("owner-a", 2027, december);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(361000));
+            assertThat(year.categories()).filteredOn(row -> row.code().equals("food")).singleElement()
+                    .satisfies(food -> assertThat(food.plan()).isEqualTo(BigInteger.valueOf(360000)));
+            var next = store.readYear("owner-a", 2028, december.plusMonths(1));
+            assertThat(next.spendingPlan()).isEqualTo(BigInteger.valueOf(372000));
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Integer.class).single()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void januaryCopyPreservesLaterHistoricalRateForTheSameCategory() {
+        YearMonth january = YearMonth.of(2028, 1);
+        YearMonth february = january.plusMonths(1);
+        try (var app = start(false, february.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 30000, '0/1', 1)").update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-01', 'leisure', 'Leisure', 'discretionary', 1, 'fraction', '1/1', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-12', 'leisure', 35000, 24000)
+                    """).update();
+
+            var store = app.getBean(MonthStore.class);
+            var report = store.readYear("owner-a", 2028, january);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(report.categories()).singleElement().satisfies(leisure -> {
+                assertThat(leisure.plan()).isEqualTo(report.spendingPlan());
+                assertThat(leisure.actual()).isZero();
+            });
+            assertThat(report.totalBuffer()).isEqualTo(BigInteger.valueOf(35000 - 24000));
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Integer.class).single()).isEqualTo(1);
+
+            var plans = app.getBean(PlanStore.class);
+            var settings = plans.read("owner-a", january);
+            assertThat(plans.save("owner-a", january, settings.revision(),
+                    PlanCalculator.evaluate(settings.draft()))).isTrue();
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(35000));
+            var afterSave = store.readYear("owner-a", 2028, february);
+            assertThat(afterSave.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(afterSave.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+            assertThat(store.read("owner-a", february).categories()).singleElement()
+                    .satisfies(leisure -> assertThat(leisure.buffer()).isEqualTo(11000));
+
+            settings = plans.read("owner-a", january);
+            var draft = settings.draft();
+            var fixed = new PlanDraft(draft.income(), draft.targetUnit(), draft.targetValue(),
+                    List.of(new PlanDraft.Row("leisure", "Leisure", "essential", "amount", "30000")));
+            var fixedPlan = PlanCalculator.evaluate(fixed);
+            assertThat(fixedPlan.error()).isNull();
+            assertThat(plans.save("owner-a", january, settings.revision(), fixedPlan)).isTrue();
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(30000));
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+
+            settings = plans.read("owner-a", january);
+            draft = settings.draft();
+            var changed = new PlanDraft(draft.income(), draft.targetUnit(), draft.targetValue(),
+                    List.of(draft.rows().getFirst().withValue("amount", "28000")));
+            assertThat(plans.save("owner-a", january, settings.revision(), PlanCalculator.evaluate(changed))).isTrue();
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(28000));
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan())
+                    .isEqualTo(BigInteger.valueOf(336000));
+        }
+    }
+
+    @Test
+    void januarySavedBeforeUpgradeUsesDecemberOverride() throws Exception {
+        YearMonth january = YearMonth.of(2028, 1);
+        try (var app = startCashTest(january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES
+                        ('owner-a', '2027-01', 30000, '0/1', 1),
+                        ('owner-a', '2028-01', 30000, '0/1', 3)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-01', 'leisure', 'Leisure', 'discretionary', 1, 'fraction', '1/1', 30000),
+                        ('owner-a', '2028-01', 'leisure', 'Leisure', 'discretionary', 1, 'fraction', '1/1', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-12', 'leisure', 35000, 24000),
+                           ('owner-a', '2028-01', 'leisure', 30000, 0)
+                    """).update();
+
+            jdbc.sql("DROP TABLE planning_category_rollover_copy").update();
+        }
+        try (var app = startCashTest(january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(35000));
+            var year = store.readYear("owner-a", 2028, january);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(year.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+            assertThat(jdbc.sql("SELECT period FROM category_month").query(String.class).single()).isEqualTo("2027-12");
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/months/2028-01?edit=true").expectFirst("#month-form");
+            cashPost(mvc, form, Map.of("amount-leisure", "800")).andExpect(status().isFound());
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+
+            jdbc.sql("DELETE FROM category_month WHERE owner = 'owner-a' AND period = '2028-01'").update();
+
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2028-01', 'leisure', 0, 0)
+                    """).update();
+            assertThat(store.read("owner-a", january).totalPlan()).isZero();
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isZero();
+        }
+    }
+
+    @Test
+    void januaryReportShowsHistoryOnlyCategoryWithoutRecordingTheProjection() {
+        YearMonth january = YearMonth.of(2028, 1);
+        try (var app = start(false, january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-12', 'food', 35000, 24000)
+                    """).update();
+
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.read("owner-a", january).categories()).singleElement().satisfies(food -> {
+                assertThat(food.code()).isEqualTo("food");
+                assertThat(food.plan()).isEqualTo(35000);
+                assertThat(food.actual()).isZero();
+                assertThat(food.actualRecorded()).isFalse();
+                assertThat(food.buffer()).isEqualTo(11000);
+            });
+            var year = store.readYear("owner-a", 2028, january);
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(year.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+            assertThat(jdbc.sql("SELECT period FROM category_month").query(String.class).single()).isEqualTo("2027-12");
+            for (String table : List.of("month_actuals", "planning_category", "cash_movement")) {
+                assertThat(jdbc.sql("SELECT count(*) FROM " + table).query(Integer.class).single()).isZero();
+            }
+        }
+    }
+
+    @Test
+    void yearUsesEffectiveSettingsAndRespectsCategoryInception() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings (owner, since, income, target, revision) VALUES
+                        ('owner-a', '2027-03', 100000, '2/5', 1),
+                        ('owner-a', '2027-07', 100000, '2/5', 2)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category (owner, since, category, name, kind, addition_order, unit, value, plan)
+                    VALUES
+                        ('owner-a', '2027-03', 'food', 'Продукты', 'essential', 1, 'amount', '30000', 30000),
+                        ('owner-a', '2027-07', 'food', 'Продукты', 'essential', 1, 'amount', '35000', 35000),
+                        ('owner-a', '2027-07', 'health', 'Здоровье', 'essential', 2, 'amount', '1000', 1000)
+                    """).update();
+            var store = app.getBean(MonthStore.class);
+            YearMonth january = YearMonth.of(2028, 1);
+            var previous = store.readYear("owner-a", 2027, january);
+            assertThat(previous.categories()).extracting(YearReport.Category::plan)
+                    .containsExactly(BigInteger.valueOf(390000), BigInteger.valueOf(6000));
+            assertThat(previous.spendingPlan()).isEqualTo(BigInteger.valueOf(396000));
+            var rollover = store.readYear("owner-a", 2028, january);
+            assertThat(rollover.spendingPlan()).isEqualTo(BigInteger.valueOf(432000));
+            assertThat(rollover.totalBuffer()).isZero();
         }
     }
 

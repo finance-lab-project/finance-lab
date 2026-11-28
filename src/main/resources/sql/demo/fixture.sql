@@ -29,6 +29,11 @@ SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actu
 FROM fixture CROSS JOIN demo_new_owners owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
 
+-- February and March use January's settings. Keep those snapshots tied to the settings.
+INSERT INTO category_month_inherited_plan (owner, period, category)
+SELECT m.owner, m.period, m.category FROM category_month m JOIN demo_new_owners o ON o.name = m.owner
+ WHERE m.period IN ('2027-02', '2027-03');
+
 -- Older demo rows have no seed marker. Keep untouched zeroes missing until
 -- the owner explicitly records an actual through history.
 

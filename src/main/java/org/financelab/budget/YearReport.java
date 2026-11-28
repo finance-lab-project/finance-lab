@@ -42,7 +42,7 @@ record YearReport(int year, YearMonth cutoff, YearMonth averageStart, List<Month
         }
 
         Category withMonth(MonthBudget.Category month) {
-            return new Category(code, month.name(), plan.add(BigInteger.valueOf(month.plan())),
+            return new Category(code, month.name(), plan,
                     actual.add(BigInteger.valueOf(month.actual())), average, buffer);
         }
 
@@ -52,6 +52,10 @@ record YearReport(int year, YearMonth cutoff, YearMonth averageStart, List<Month
 
         Category withBalance(BigInteger balance) {
             return new Category(code, name, plan, actual, average, buffer.add(balance));
+        }
+
+        Category withPlan(BigInteger amount) {
+            return new Category(code, name, plan.add(amount), actual, average, buffer);
         }
     }
 

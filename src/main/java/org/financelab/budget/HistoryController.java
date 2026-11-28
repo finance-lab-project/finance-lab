@@ -108,7 +108,7 @@ class HistoryController {
         Map<String, String> fields = new HashMap<>();
         MonthActuals.addFigureFields(fields, saved.figures());
         for (var row : saved.categories()) {
-            fields.put("plan-" + row.code(), row.recorded() ? Rubles.number(row.plan()) : "");
+            fields.put("plan-" + row.code(), row.explicitPlan() ? Rubles.number(row.plan()) : "");
             fields.put("amount-" + row.code(), row.actualRecorded() ? Rubles.number(row.actual()) : "");
         }
         return fields;
@@ -124,10 +124,10 @@ class HistoryController {
             boolean actualMissing = draft.getOrDefault(actualKey, "").isBlank();
             if (!row.recorded() && planMissing && actualMissing) continue;
 
-            long plan = !row.recorded() && planMissing ? 0 : MonthActuals.amount(planKey, draft, errors);
+            long plan = planMissing ? row.effectivePlan() : MonthActuals.amount(planKey, draft, errors);
             long actual = !row.actualRecorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
             if (plan < 0) errors.put(planKey, "Плановая сумма не может быть отрицательной.");
-            categories.add(new HistoricalEdit(row.code(), plan, actual, !actualMissing));
+            categories.add(new HistoricalEdit(row.code(), plan, actual, !actualMissing, !planMissing));
         }
         return categories;
     }

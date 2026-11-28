@@ -23,6 +23,19 @@ CREATE TABLE IF NOT EXISTS category_month (
     PRIMARY KEY (owner, period, category)
 ) STRICT;
 
+-- Actual-only and settings-derived rows retain their plan snapshots for balances.
+-- The settings or a historical rate determines the annual projection.
+-- Older databases stored a blank historical rate and an explicit zero identically.
+-- Keep each unmarked legacy rate, including zero, until the owner corrects it.
+CREATE TABLE IF NOT EXISTS category_month_inherited_plan (
+    owner TEXT NOT NULL,
+    period TEXT NOT NULL,
+    category TEXT NOT NULL,
+    PRIMARY KEY (owner, period, category),
+    FOREIGN KEY (owner, period, category) REFERENCES category_month(owner, period, category)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS month_actuals (
     owner TEXT NOT NULL,
     period TEXT NOT NULL,
@@ -64,6 +77,85 @@ CREATE TABLE IF NOT EXISTS planning_category (
     UNIQUE (owner, since, addition_order),
     FOREIGN KEY (owner, since) REFERENCES planning_settings(owner, since)
 ) STRICT;
+
+-- The legacy inference is needed only when migrating a database that predates the markers.
+CREATE TEMP TABLE migrate_legacy_rollover AS
+SELECT 1 WHERE NOT EXISTS (
+    SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'planning_category_rollover_copy'
+);
+
+CREATE TABLE IF NOT EXISTS planning_category_rollover_copy (
+    owner TEXT NOT NULL,
+    since TEXT NOT NULL,
+    category TEXT NOT NULL,
+    PRIMARY KEY (owner, since, category),
+    FOREIGN KEY (owner, since, category) REFERENCES planning_category(owner, since, category) ON DELETE CASCADE
+) STRICT;
+
+-- In legacy versions a normal January settings save advanced the rollover revision
+-- and could create a plan-only category_month snapshot. Preserve unmarked zero rates.
+INSERT INTO planning_category_rollover_copy (owner, since, category)
+SELECT p.owner, p.since, p.category FROM planning_category p
+  JOIN planning_settings jan ON jan.owner = p.owner AND jan.since = p.since
+  JOIN planning_settings prev ON prev.owner = p.owner AND prev.since = (
+      SELECT max(since) FROM planning_settings WHERE owner = p.owner AND since < p.since
+  )
+  JOIN planning_category old ON old.owner = prev.owner AND old.since = prev.since AND old.category = p.category
+ WHERE EXISTS (SELECT 1 FROM migrate_legacy_rollover) AND substr(p.since, 6, 2) = '01'
+   AND (jan.revision = prev.revision + 1 OR (
+       jan.revision = prev.revision + 2 AND EXISTS (
+           SELECT 1 FROM category_month m WHERE m.owner = p.owner AND m.period = p.since
+             AND m.category = p.category AND m.plan = p.plan AND m.plan <> 0
+       ) AND (old.kind <> 'essential' OR NOT EXISTS (
+           SELECT 1 FROM category_month m WHERE m.owner = p.owner AND m.category = p.category
+             AND m.period >= strftime('%Y-%m', p.since || '-01', '-1 year') AND m.period < p.since
+             AND (m.actual <> 0 OR m.revision > 0)
+       ))
+   ))
+   AND old.kind = p.kind AND old.unit = p.unit AND old.value = p.value
+   AND jan.income = prev.income AND jan.target = prev.target AND old.plan = p.plan
+   AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = p.owner
+                    AND m.period = p.since AND m.category = p.category
+                    AND (m.plan = 0 OR m.plan <> p.plan OR m.actual <> 0 OR m.revision <> 0
+                         OR EXISTS (SELECT 1 FROM month_actuals a WHERE a.owner = m.owner AND a.period = m.period)))
+ON CONFLICT DO NOTHING;
+
+-- Remove settings-only snapshots so projected rates contribute no opening buffer.
+DELETE FROM category_month
+ WHERE EXISTS (SELECT 1 FROM migrate_legacy_rollover) AND plan <> 0 AND actual = 0 AND revision = 0
+   AND NOT EXISTS (SELECT 1 FROM month_actuals a
+                    WHERE a.owner = category_month.owner AND a.period = category_month.period)
+   AND EXISTS (
+       SELECT 1 FROM planning_category_rollover_copy c
+         JOIN planning_category p USING (owner, since, category)
+        WHERE c.owner = category_month.owner AND c.since = category_month.period
+          AND c.category = category_month.category AND p.plan = category_month.plan
+   );
+
+DROP TABLE temp.migrate_legacy_rollover;
+
+-- A backdated history edit must preserve a category's already established start.
+CREATE TABLE IF NOT EXISTS category_plan_inception (
+    owner TEXT NOT NULL,
+    category TEXT NOT NULL REFERENCES category(code),
+    since TEXT NOT NULL,
+    PRIMARY KEY (owner, category)
+) STRICT;
+
+-- For upgraded owners, a pre-settings rate is evidence that a reserved category
+-- was already used. Inherited plan snapshots supply no such evidence.
+CREATE VIEW IF NOT EXISTS inferred_category_plan_inception AS
+SELECT f.owner, f.category, f.since FROM (
+    SELECT owner, category, min(since) AS since FROM planning_category GROUP BY owner, category
+) f
+WHERE f.category NOT IN ('housing', 'food', 'health', 'leisure', 'travel')
+   OR (f.since > (SELECT min(since) FROM planning_settings WHERE owner = f.owner)
+       AND NOT EXISTS (
+           SELECT 1 FROM category_month m
+            WHERE m.owner = f.owner AND m.category = f.category AND m.period < f.since
+              AND NOT EXISTS (SELECT 1 FROM category_month_inherited_plan i
+                               WHERE i.owner = m.owner AND i.period = m.period AND i.category = m.category)
+       ));
 
 CREATE TABLE IF NOT EXISTS investment_account (
     id INTEGER PRIMARY KEY,

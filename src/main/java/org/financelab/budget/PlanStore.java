@@ -70,8 +70,8 @@ class PlanStore {
 
         PlanDraft saved = savedSettings(owner, january.minusMonths(1)).draft();
         var plan = PlanCalculator.evaluate(withHistoricalAverages(owner, january, saved));
-        // Opening the budget must not record an unused month for future carry.
-        saveCategories(owner, january.toString(), current.toString(), plan, false);
+        // Rollover records settings only. Existing month rows retain their recorded plans.
+        saveCategories(owner, january.toString(), plan, false, false);
     }
 
     // Called within the month write transaction so the new plans and historical figures commit together.
@@ -81,7 +81,7 @@ class PlanStore {
         PlanDraft updated = withHistoricalAverages(owner, current.withMonth(1), saved);
         if (updated.rows().equals(saved.rows())) return;
 
-        if (!save(owner, current, settings.revision(), PlanCalculator.evaluate(updated))) {
+        if (!save(owner, current, settings.revision(), PlanCalculator.evaluate(updated), false)) {
             throw new IllegalStateException("Planning settings changed during the historical save.");
         }
     }
@@ -109,6 +109,11 @@ class PlanStore {
 
     @Transactional
     public boolean save(String owner, YearMonth month, long revision, PlanCalculator.Preview plan) {
+        return save(owner, month, revision, plan, true);
+    }
+
+    private boolean save(String owner, YearMonth month, long revision, PlanCalculator.Preview plan,
+                         boolean explicitSave) {
         PlanDraft draft = plan.draft();
         String since = month.toString();
         // Acquire the write transaction and compare the version before changing any category or month.
@@ -116,13 +121,28 @@ class PlanStore {
                 .param("income", Rubles.parse(draft.income())).param("target", draft.targetValue())
                 .param("revision", revision).update();
         if (changed == 0) return false;
-        saveCategories(owner, since, since, plan, true);
+        saveCategories(owner, since, plan, explicitSave, true);
         return true;
     }
 
-    private void saveCategories(String owner, String since, String firstMutableMonth,
-                                PlanCalculator.Preview plan, boolean recordMonth) {
+    private void saveCategories(String owner, String since, PlanCalculator.Preview plan,
+                                boolean recordMonth, boolean refreshInherited) {
         PlanDraft draft = plan.draft();
+        record Rate(String group, String unit, String value, long amount) {}
+        Map<String, Rate> previousRates = new HashMap<>();
+        jdbc.sql("""
+                SELECT p.category, p.kind, p.unit, p.value, p.plan FROM planning_category p
+                 WHERE p.owner = :owner AND p.since = (
+                     SELECT max(since) FROM planning_category WHERE owner = :owner AND since <= :since
+                 ) AND ((p.since < :since AND NOT :recordMonth) OR EXISTS (
+                     SELECT 1 FROM planning_category_rollover_copy c WHERE c.owner = p.owner
+                       AND c.since = p.since AND c.category = p.category
+                 ) AND p.since = :since)
+                """).param("owner", owner).param("since", since).param("recordMonth", recordMonth)
+                .query(rs -> {
+                    var rate = new Rate(rs.getString("kind"), rs.getString("unit"), rs.getString("value"), rs.getLong("plan"));
+                    previousRates.put(rs.getString("category"), rate);
+                });
         jdbc.sql("DELETE FROM planning_category WHERE owner = ? AND since = ?").params(owner, since).update();
         for (int i = 0; i < draft.rows().size(); i++) {
             PlanDraft.Row row = draft.rows().get(i);
@@ -140,16 +160,40 @@ class PlanStore {
                     INSERT INTO planning_category (owner, since, category, name, kind, addition_order, unit, value, plan)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """).params(owner, since, code, row.name().strip(), row.group(), i + 1, row.unit(), row.value(), rubles).update();
-            if (recordMonth) {
-                jdbc.sql("""
-                        INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
-                        ON CONFLICT(owner, period, category) DO UPDATE SET plan = excluded.plan
-                        """).params(owner, since, code, rubles).update();
+            boolean rolloverCopy = new Rate(row.group(), row.unit(), row.value(), rubles).equals(previousRates.get(code));
+            if (rolloverCopy) {
+                jdbc.sql("INSERT INTO planning_category_rollover_copy (owner, since, category) VALUES (?, ?, ?)")
+                        .params(owner, since, code).update();
             }
-            jdbc.sql("""
-                    UPDATE category_month SET plan = ?
-                     WHERE owner = ? AND period >= ? AND category = ? AND plan <> ?
-                    """).params(rubles, owner, firstMutableMonth, code, rubles).update();
+            if (recordMonth && !rolloverCopy) {
+                int added = jdbc.sql("""
+                        INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
+                        ON CONFLICT(owner, period, category) DO NOTHING
+                        """).params(owner, since, code, rubles).update();
+                if (added == 1) {
+                    jdbc.sql("""
+                            INSERT INTO category_month_inherited_plan (owner, period, category) VALUES (?, ?, ?)
+                            """).params(owner, since, code).update();
+                }
+            }
+            if (refreshInherited && !rolloverCopy) {
+                // An explicit rate supersedes the calculated setting for inherited rows that follow it.
+                jdbc.sql("""
+                        UPDATE category_month SET plan = ?
+                         WHERE owner = ? AND period >= ? AND category = ? AND plan <> ?
+                           AND EXISTS (SELECT 1 FROM category_month_inherited_plan i
+                                        WHERE i.owner = category_month.owner AND i.period = category_month.period
+                                          AND i.category = category_month.category)
+                           AND NOT EXISTS (
+                               SELECT 1 FROM category_month m
+                                WHERE m.owner = category_month.owner AND m.category = category_month.category
+                                  AND m.period BETWEEN ? AND category_month.period
+                                  AND NOT EXISTS (SELECT 1 FROM category_month_inherited_plan i
+                                                   WHERE i.owner = m.owner AND i.period = m.period
+                                                     AND i.category = m.category)
+                           )
+                        """).params(rubles, owner, since, code, rubles, since).update();
+            }
         }
     }
 }
