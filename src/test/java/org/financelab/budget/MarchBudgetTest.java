@@ -854,6 +854,33 @@ class MarchBudgetTest {
     }
 
     @Test
+    void historyOnlyCategoryCanBeEditedAfterOpeningTheNextYear() throws Exception {
+        try (var app = startCashTest("2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a','2027-11','food',30000,30000)
+                    """).update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            assertFood(reviewPage(mvc, "/months/2028-01"), "30 000", "0");
+            var form = reviewPage(mvc, "/history/2027-12").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-food").val()).isEmpty();
+            assertThat(form.expectFirst("#amount-food").val()).isEmpty();
+            cashPost(mvc, form, Map.of("plan-food", "35000", "amount-food", "24000")).andExpect(status().isFound());
+            assertFood(reviewPage(mvc, "/months/2027-12"), "35 000", "0");
+            assertFood(reviewPage(mvc, "/months/2028-01"), "35 000", "11 000");
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2028, YearMonth.of(2028, 1));
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(year.categories()).singleElement().satisfies(food -> assertThat(food.actual()).isZero());
+            assertThat(jdbc.sql("SELECT period FROM category_month ORDER BY period").query(String.class).list())
+                    .containsExactly("2027-11", "2027-12");
+            assertThat(jdbc.sql("SELECT period, amount FROM cash_movement").query((rs, row) ->
+                    List.of(rs.getString("period"), rs.getString("amount"))).single())
+                    .containsExactly("2027-12", "-24000");
+        }
+    }
+
+    @Test
     void editingIncomeKeepsAnUntouchedHistoryOnlyCategoryProjected() throws Exception {
         try (var app = startCashTest("2028-01")) {
             var jdbc = app.getBean(JdbcClient.class);

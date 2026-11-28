@@ -1,6 +1,4 @@
-, effective_rates AS (
-    SELECT category, plan FROM periods WHERE period <= :period AND (until IS NULL OR until > :period)
-), settings_categories AS (
+, settings_categories AS (
     SELECT p.category, p.name, p.kind, p.addition_order, coalesce(r.plan, p.plan) AS plan
       FROM planning_category p LEFT JOIN effective_rates r ON r.category = p.category
      WHERE p.owner = :owner AND p.since = :since

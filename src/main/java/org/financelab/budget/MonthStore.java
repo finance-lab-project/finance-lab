@@ -133,11 +133,13 @@ class MonthStore {
         this.jdbc = jdbc;
         var categoryPlanPeriods = new ClassPathResource("sql/queries/category-plan-periods.sql")
                 .getContentAsString(StandardCharsets.UTF_8);
-        this.readMonthSql = categoryPlanPeriods + new ClassPathResource("sql/queries/read-month.sql")
+        var effectiveMonthRates = categoryPlanPeriods + new ClassPathResource("sql/queries/effective-category-rates.sql")
+                .getContentAsString(StandardCharsets.UTF_8);
+        this.readMonthSql = effectiveMonthRates + new ClassPathResource("sql/queries/read-month.sql")
                 .getContentAsString(StandardCharsets.UTF_8);
         this.readYearPlansSql = categoryPlanPeriods + new ClassPathResource("sql/queries/read-year-plans.sql")
                 .getContentAsString(StandardCharsets.UTF_8);
-        this.readHistorySql = categoryPlanPeriods + new ClassPathResource("sql/queries/read-history.sql")
+        this.readHistorySql = effectiveMonthRates + new ClassPathResource("sql/queries/read-history.sql")
                 .getContentAsString(StandardCharsets.UTF_8);
         this.replaceMonthSql = new ClassPathResource("sql/queries/replace-month.sql").getContentAsString(StandardCharsets.UTF_8);
     }
