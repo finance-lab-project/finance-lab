@@ -1,13 +1,14 @@
 -- Recorded plans and actuals from the worked example. Both owners start independently.
+-- Capture which owners are seeded in this run before inserting their monthly rows.
+CREATE TEMP TABLE demo_new_owners AS
+WITH accounts(name) AS (VALUES ('owner-a'), ('owner-b'))
+SELECT name FROM accounts a
+ WHERE NOT EXISTS (SELECT 1 FROM planning_settings p WHERE p.owner = a.name)
+   AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = a.name)
+   AND NOT EXISTS (SELECT 1 FROM month_actuals m WHERE m.owner = a.name);
+
 WITH RECURSIVE
     months_2026(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM months_2026 WHERE n < 12),
-    accounts(name) AS (VALUES ('owner-a'), ('owner-b')),
-    owners(name) AS MATERIALIZED (
-        SELECT name FROM accounts a
-         WHERE NOT EXISTS (SELECT 1 FROM planning_settings p WHERE p.owner = a.name)
-           AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = a.name)
-           AND NOT EXISTS (SELECT 1 FROM month_actuals m WHERE m.owner = a.name)
-    ),
     fixture(period, category, plan, actual) AS (
         SELECT printf('2026-%02d', n), 'food',
                CASE WHEN n = 12 THEN 22000 ELSE 24000 END, 24000 FROM months_2026
@@ -21,17 +22,22 @@ WITH RECURSIVE
             ('2027-01', 'leisure', 12000, 10000), ('2027-02', 'leisure', 12000, 14000), ('2027-03', 'leisure', 12000,  1000),
             ('2027-01', 'travel',   8000,  5000), ('2027-02', 'travel',   8000,  6000), ('2027-03', 'travel',   8000,     0)
     )
-INSERT INTO category_month (owner, period, category, plan, actual)
-SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual
-FROM fixture CROSS JOIN owners WHERE true
+-- The fixture supplies actuals for every row, including the explicit zeroes.
+INSERT INTO category_month (owner, period, category, plan, actual, revision)
+SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual,
+       CASE WHEN fixture.actual = 0 THEN 1 ELSE 0 END
+FROM fixture CROSS JOIN demo_new_owners owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
 
--- Include existing walkthrough databases. The reserved food key identifies the demo months.
+-- Older demo rows have no seed marker. Keep untouched zeroes missing until
+-- the owner explicitly records an actual through history.
+
+-- Only owners seeded by this run receive the example income and contributions.
 WITH figures(period, income, contributions) AS (VALUES
     ('2027-01', 98000, 35000), ('2027-02', 102000, 45000), ('2027-03', 50000, 10000)
 )
 INSERT INTO month_actuals (owner, period, income, contributions, revision)
-SELECT m.owner, m.period, f.income, f.contributions, 0
-  FROM category_month m JOIN figures f ON f.period = m.period
- WHERE m.category = 'food'
-ON CONFLICT (owner, period) DO NOTHING;
+SELECT o.name, f.period, f.income, f.contributions, 0
+  FROM demo_new_owners o CROSS JOIN figures f;
+
+DROP TABLE temp.demo_new_owners;

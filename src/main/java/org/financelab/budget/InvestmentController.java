@@ -119,7 +119,9 @@ class InvestmentController {
         model.addAttribute("previousValue", previous);
         model.addAttribute("valueChange", complete && previousComplete ? value.subtract(previous) : null);
         model.addAttribute("portfolioIncome", complete ? total(accounts, account -> account.figures().creditedIncome()) : null);
-        model.addAttribute("contributions", budget.savedFigures(owner, month).map(MonthBudget.Figures::contributions).orElse(null));
+        model.addAttribute("contributions", budget.savedFigures(owner, month)
+                .filter(MonthBudget.Figures::contributionsRecorded)
+                .map(MonthBudget.Figures::contributions).orElse(null));
         return "investments";
     }
 
