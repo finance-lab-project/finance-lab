@@ -64,9 +64,10 @@ public record MonthBudget(@Nullable Terms terms, Figures figures, List<Category>
      * @param group essential or discretionary expense group
      * @param plan monthly allocation in whole rubles
      * @param actual saved cumulative spending in whole rubles
+     * @param actualRecorded whether an actual was recorded
      * @param buffer balance carried from earlier months, in whole rubles
      */
-    public record Category(String code, String name, String group, long plan, long actual, long buffer) {
+    public record Category(String code, String name, String group, long plan, long actual, boolean actualRecorded, long buffer) {
         /**
          * Creates a saved category row.
          * @param code stable category identifier
@@ -74,6 +75,7 @@ public record MonthBudget(@Nullable Terms terms, Figures figures, List<Category>
          * @param group expense group
          * @param plan monthly allocation in rubles
          * @param actual saved cumulative spending in rubles
+         * @param actualRecorded whether an actual was recorded
          * @param buffer opening balance in rubles
          * @throws NullPointerException if the code or name is null
          */

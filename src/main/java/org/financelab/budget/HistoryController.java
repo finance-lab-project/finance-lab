@@ -108,7 +108,7 @@ class HistoryController {
         fields.put("contributions", Rubles.number(saved.figures().contributions()));
         for (var row : saved.categories()) {
             fields.put("plan-" + row.code(), row.recorded() ? Rubles.number(row.plan()) : "");
-            fields.put("amount-" + row.code(), row.recorded() ? Rubles.number(row.actual()) : "");
+            fields.put("amount-" + row.code(), row.actualRecorded() ? Rubles.number(row.actual()) : "");
         }
         return fields;
     }
@@ -124,7 +124,7 @@ class HistoryController {
             if (!row.recorded() && planMissing && actualMissing) continue;
 
             long plan = !row.recorded() && planMissing ? 0 : MonthActuals.amount(planKey, draft, errors);
-            long actual = !row.recorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
+            long actual = !row.actualRecorded() && actualMissing ? 0 : MonthActuals.amount(actualKey, draft, errors);
             if (plan < 0) errors.put(planKey, "Плановая сумма не может быть отрицательной.");
             categories.add(new HistoricalEdit(row.code(), plan, actual, !actualMissing));
         }

@@ -40,14 +40,12 @@
             </dl>
         </section>
         <section aria-labelledby="averages-heading" aria-describedby="average-period">
-            <h2 id="averages-heading">Среднее за завершённые месяцы</h2>
-            <p id="average-period" class="hint report-period"
-               th:text="${averagePeriod ?: 'Нет завершённых месяцев'}"></p>
-            <dl th:if="${report.completedMonths() > 0}" class="summary" th:with="totals=${report.completedTotals()}">
-                <div><dt>Доход</dt><dd id="average-income" th:text="${@rubles.display(report.roundedAverage(totals.income()))}"></dd></div>
-                <div><dt>Расходы</dt><dd id="average-spending" th:text="${@rubles.display(report.roundedAverage(totals.spending()))}"></dd></div>
-                <div><dt>Инвестиционные взносы</dt><dd id="average-contributions"
-                    th:text="${@rubles.display(report.roundedAverage(totals.contributions()))}"></dd></div>
+            <h2 id="averages-heading">Среднее за последние 12 завершённых месяцев</h2>
+            <p id="average-period" class="hint report-period" th:text="${averagePeriod}"></p>
+            <dl class="summary">
+                <div th:replace="~{:: averageSummary('Доход', 'average-income', ${report.incomeAverage()})}"></div>
+                <div th:replace="~{:: averageSummary('Расходы', 'average-spending', ${report.spendingAverage()})}"></div>
+                <div th:replace="~{:: averageSummary('Инвестиционные взносы', 'average-contributions', ${report.contributionsAverage()})}"></div>
             </dl>
         </section>
         <section aria-labelledby="plan-heading">
@@ -94,8 +92,7 @@
                             <th scope="row" th:text="${row.name()}"></th>
                             <td data-label="План на год" class="plan" th:text="${@rubles.display(row.plan())}"></td>
                             <td data-label="Факт за год" class="actual" th:text="${@rubles.display(row.actual())}"></td>
-                            <td data-label="Среднее" class="average"
-                                th:text="${report.completedMonths() == 0 ? '—' : @rubles.display(report.roundedAverage(row.completedActual()))}"></td>
+                            <td data-label="Среднее" th:insert="~{:: averageValue(${row.average()})}"></td>
                             <td data-label="Буфер" class="buffer" th:classappend="${row.buffer().signum() < 0} ? 'negative'"
                                 th:text="${@rubles.display(row.buffer())}"></td>
                         </tr>
@@ -105,5 +102,15 @@
         </section>
     </main>
 </div>
+<th:block th:remove="all">
+    <div th:fragment="averageSummary(label, id, average)">
+        <dt th:text="${label}"></dt>
+        <dd th:id="${id}" th:insert="~{:: averageValue(${average})}"></dd>
+    </div>
+    <th:block th:fragment="averageValue(average)">
+        <span class="average" th:text="${average.count() == 0 ? 'Нет данных' : @rubles.display(average.rounded())}"></span>
+        <small class="hint" th:text="|${average.count()} из 12 мес.|"></small>
+    </th:block>
+</th:block>
 </body>
 </html>

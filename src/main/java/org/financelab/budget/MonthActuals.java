@@ -11,8 +11,8 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
         fields.put("income", Rubles.number(month.figures().income()));
         fields.put("contributions", Rubles.number(month.figures().contributions()));
         for (var row : month.categories()) {
-            fields.put("amount-" + row.code(), Rubles.number(row.actual()));
-            fields.put("percent-" + row.code(), month.percent(row.actual()));
+            fields.put("amount-" + row.code(), row.actualRecorded() ? Rubles.number(row.actual()) : "");
+            fields.put("percent-" + row.code(), row.actualRecorded() ? month.percent(row.actual()) : "");
         }
         return fields;
     }
@@ -36,6 +36,8 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
                     draft.put(amountKey, "");
                 }
             } else {
+                String input = draft.get(amountKey);
+                if (!row.actualRecorded() && input != null && input.isBlank()) continue;
                 long value = amount(amountKey, draft, errors);
                 spending.put(row.code(), value);
                 draft.put(percentKey, errors.containsKey(amountKey) ? "" : month.percent(value));
