@@ -29,14 +29,14 @@ FROM fixture CROSS JOIN owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
 
 -- Earlier demo versions seeded these two March actuals as zero at revision 0.
--- The reserved food and housing history identifies owners seeded by the walkthrough.
+-- Both December actuals must match the walkthrough before promoting a legacy zero.
 UPDATE category_month AS march SET revision = 1
  WHERE owner IN ('owner-a', 'owner-b') AND period = '2027-03'
    AND category IN ('health', 'travel') AND actual = 0 AND revision = 0
    AND EXISTS (SELECT 1 FROM category_month h WHERE h.owner = march.owner
-                AND h.period = '2026-12' AND h.category = 'housing')
+                AND h.period = '2026-12' AND h.category = 'housing' AND h.actual = 24000)
    AND EXISTS (SELECT 1 FROM category_month f WHERE f.owner = march.owner
-                AND f.period = '2026-12' AND f.category = 'food');
+                AND f.period = '2026-12' AND f.category = 'food' AND f.actual = 24000);
 
 -- Include existing walkthrough databases. The reserved food key identifies the demo months.
 WITH figures(period, income, contributions) AS (VALUES

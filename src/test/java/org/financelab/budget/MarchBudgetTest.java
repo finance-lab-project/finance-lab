@@ -615,6 +615,15 @@ class MarchBudgetTest {
 
     @Test
     void existingDemoRestoresKnownZeroesAndKeepsUnrelatedLegacyDefaultsMissing() throws Exception {
+        try (var app = startReportTest("fixture", "2027-04")) {
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-b', '2026-12', 'food', 22000, 0),
+                        ('owner-b', '2026-12', 'housing', 12000, 0),
+                        ('owner-b', '2027-03', 'health', 3000, 0),
+                        ('owner-b', '2027-03', 'travel', 8000, 0)
+                    """).update();
+        }
         try (var app = startReportTest("demo", "2027-04")) {
             var jdbc = app.getBean(JdbcClient.class);
             jdbc.sql("""
@@ -625,22 +634,18 @@ class MarchBudgetTest {
                     INSERT INTO category_month (owner, period, category, plan, actual)
                     VALUES ('owner-a', '2026-11', 'travel', 8000, 0)
                     """).update();
-            jdbc.sql("DELETE FROM category_month WHERE owner = 'owner-b' AND period < '2027-03'").update();
-            jdbc.sql("""
-                    UPDATE category_month SET revision = 0 WHERE owner = 'owner-b'
-                     AND period = '2027-03' AND category = 'travel'
-                    """).update();
         }
         try (var app = startReportTest("demo", "2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var report = reviewPage(mvc, "/years/2027");
             assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 000 ₽ 3 из 12 мес.");
             assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("3 667 ₽ 3 из 12 мес.");
-            var jdbc = app.getBean(JdbcClient.class);
-            assertThat(jdbc.sql("""
-                    SELECT revision FROM category_month WHERE owner = 'owner-b'
-                     AND period = '2027-03' AND category = 'travel'
-                    """).query(Integer.class).single()).isZero();
+            var unseededReport = Jsoup.parse(mvc.perform(get("/years/2027").principal(() -> "owner-b"))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+            assertThat(unseededReport.expectFirst("#row-health [data-label=Среднее]").text())
+                    .isEqualTo("Нет данных 0 из 12 мес.");
+            assertThat(unseededReport.expectFirst("#row-travel [data-label=Среднее]").text())
+                    .isEqualTo("Нет данных 0 из 12 мес.");
         }
     }
 
