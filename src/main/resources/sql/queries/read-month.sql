@@ -1,6 +1,10 @@
 WITH settings_categories AS (
-    SELECT category, name, kind, addition_order, plan
-      FROM planning_category WHERE owner = :owner AND since = :since
+    SELECT p.category, p.name, p.kind, p.addition_order,
+           coalesce((SELECT h.plan FROM category_month h
+                      WHERE h.owner = p.owner AND h.category = p.category
+                        AND h.period >= p.since AND h.period <= :period
+                      ORDER BY h.period DESC LIMIT 1), p.plan) AS plan
+      FROM planning_category p WHERE p.owner = :owner AND p.since = :since
 ), rows AS (
     SELECT p.category, p.name, p.kind, p.addition_order, coalesce(m.plan, p.plan) AS plan,
            coalesce(m.actual, 0) AS actual

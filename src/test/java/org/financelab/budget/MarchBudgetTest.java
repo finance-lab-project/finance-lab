@@ -718,8 +718,8 @@ class MarchBudgetTest {
     }
 
     @Test
-    void historicalRateSupersedesOlderSettingsUntilTheNextDatedRate() {
-        try (var app = start(false, "2027-12")) {
+    void historicalRateSupersedesOlderSettingsUntilTheNextDatedRate() throws Exception {
+        try (var app = startCashTest("2027-08")) {
             var jdbc = app.getBean(JdbcClient.class);
             jdbc.sql("""
                     INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 100000, '0/1', 1)
@@ -734,6 +734,18 @@ class MarchBudgetTest {
                     """).update();
             var year = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 12));
             assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(390000));
+
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/months/2027-08?edit=true");
+            var fields = monthFields(form);
+            fields.put("amount-food", "1000");
+            var request = post("/months/2027-08").principal(() -> "owner-a");
+            fields.forEach(request::param);
+            mvc.perform(request).andExpect(status().isFound());
+            assertThat(jdbc.sql("SELECT plan FROM category_month WHERE owner = 'owner-a' AND period = '2027-08'")
+                    .query(Long.class).single()).isEqualTo(35000L);
+            assertThat(app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 8)).spendingPlan())
+                    .isEqualTo(BigInteger.valueOf(390000));
         }
     }
 
