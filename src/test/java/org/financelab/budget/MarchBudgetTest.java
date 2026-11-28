@@ -854,6 +854,27 @@ class MarchBudgetTest {
     }
 
     @Test
+    void editingIncomeKeepsAnUntouchedHistoryOnlyCategoryProjected() throws Exception {
+        try (var app = startCashTest("2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a','2027-12','travel',35000,24000)
+                    """).update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/months/2028-01?edit=true").expectFirst("#month-form");
+            assertThat(form.expectFirst("#row-travel .plan").text()).isEqualTo("35 000 ₽");
+            assertThat(form.expectFirst("#row-travel .buffer").text()).isEqualTo("11 000 ₽");
+            assertThat(form.expectFirst("#amount-travel").val()).isEmpty();
+            cashPost(mvc, form, Map.of("income", "1000")).andExpect(status().isFound());
+            assertThat(jdbc.sql("SELECT count(*) FROM category_month WHERE owner = 'owner-a' AND period = '2028-01'")
+                    .query(Integer.class).single()).isZero();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2028, YearMonth.of(2028, 2));
+            assertThat(report.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+        }
+    }
+
+    @Test
     void sameMonthSettingsPreserveExplicitRatesAndTheHistoryForm() throws Exception {
         var january = YearMonth.of(2028, 1);
         try (var app = startCashTest("2028-02")) {
@@ -1060,9 +1081,9 @@ class MarchBudgetTest {
     }
 
     @Test
-    void januaryAlreadyOpenedBeforeUpgradeUsesDecemberOverride() {
+    void januaryAlreadyOpenedBeforeUpgradeUsesDecemberOverride() throws Exception {
         YearMonth january = YearMonth.of(2028, 1);
-        try (var app = start(false, january.toString())) {
+        try (var app = startCashTest(january.toString())) {
             var jdbc = app.getBean(JdbcClient.class);
             jdbc.sql("""
                     INSERT INTO planning_settings VALUES
@@ -1079,11 +1100,21 @@ class MarchBudgetTest {
                     VALUES ('owner-a', '2027-12', 'leisure', 35000, 24000)
                     """).update();
 
+            jdbc.sql("DROP TABLE planning_category_rollover_copy").update();
+        }
+        try (var app = startCashTest(january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
             var store = app.getBean(MonthStore.class);
             assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(35000));
             var year = store.readYear("owner-a", 2028, january);
             assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
             assertThat(year.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/months/2028-01?edit=true").expectFirst("#month-form");
+            cashPost(mvc, form, Map.of("amount-leisure", "800")).andExpect(status().isFound());
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+
+            jdbc.sql("DELETE FROM category_month WHERE owner = 'owner-a' AND period = '2028-01'").update();
 
             jdbc.sql("""
                     INSERT INTO category_month (owner, period, category, plan, actual)

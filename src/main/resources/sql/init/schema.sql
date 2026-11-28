@@ -86,6 +86,21 @@ CREATE TABLE IF NOT EXISTS planning_category_rollover_copy (
     FOREIGN KEY (owner, since, category) REFERENCES planning_category(owner, since, category) ON DELETE CASCADE
 ) STRICT;
 
+-- In legacy versions a normal January settings save advanced the rollover revision
+-- and created a category_month row. Capture untouched automatic copies before new entries.
+INSERT INTO planning_category_rollover_copy (owner, since, category)
+SELECT p.owner, p.since, p.category FROM planning_category p
+  JOIN planning_settings jan ON jan.owner = p.owner AND jan.since = p.since
+  JOIN planning_settings prev ON prev.owner = p.owner AND prev.since = (
+      SELECT max(since) FROM planning_settings WHERE owner = p.owner AND since < p.since
+  )
+  JOIN planning_category old ON old.owner = prev.owner AND old.since = prev.since AND old.category = p.category
+ WHERE substr(p.since, 6, 2) = '01' AND jan.revision = prev.revision + 1
+   AND jan.income = prev.income AND jan.target = prev.target AND old.plan = p.plan
+   AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = p.owner
+                    AND m.period = p.since AND m.category = p.category)
+ON CONFLICT DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS investment_account (
     id INTEGER PRIMARY KEY,
     owner TEXT NOT NULL,

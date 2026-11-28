@@ -301,6 +301,7 @@ class MonthStore {
                 .subtract(net(saved.figures().income(), saved.figures().contributions()));
         for (var row : saved.categories()) {
             Long actual = actuals.spending().get(row.code());
+            if (actual == null && !row.actualRecorded()) continue;
             change = change.add(net(row.actual(), actual == null ? 0 : actual));
             saveCategory(owner, month, row.code(), row.plan(), actual == null ? 0 : actual, false,
                     actual == null ? 0 : 1);
