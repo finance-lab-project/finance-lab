@@ -70,8 +70,8 @@ class PlanStore {
 
         PlanDraft saved = savedSettings(owner, january.minusMonths(1)).draft();
         var plan = PlanCalculator.evaluate(withHistoricalAverages(owner, january, saved));
-        // Opening the budget must not record an unused month for future carry.
-        saveCategories(owner, january.toString(), current.toString(), plan, false);
+        // Rollover records settings only. Existing month rows retain their recorded plans.
+        saveCategories(owner, january.toString(), plan, false);
     }
 
     // Called within the month write transaction so the new plans and historical figures commit together.
@@ -116,12 +116,11 @@ class PlanStore {
                 .param("income", Rubles.parse(draft.income())).param("target", draft.targetValue())
                 .param("revision", revision).update();
         if (changed == 0) return false;
-        saveCategories(owner, since, since, plan, true);
+        saveCategories(owner, since, plan, true);
         return true;
     }
 
-    private void saveCategories(String owner, String since, String firstMutableMonth,
-                                PlanCalculator.Preview plan, boolean recordMonth) {
+    private void saveCategories(String owner, String since, PlanCalculator.Preview plan, boolean recordMonth) {
         PlanDraft draft = plan.draft();
         jdbc.sql("DELETE FROM planning_category WHERE owner = ? AND since = ?").params(owner, since).update();
         for (int i = 0; i < draft.rows().size(); i++) {
@@ -147,11 +146,11 @@ class PlanStore {
                         INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
                         ON CONFLICT(owner, period, category) DO UPDATE SET plan = excluded.plan
                         """).params(owner, since, code, rubles).update();
+                jdbc.sql("""
+                        UPDATE category_month SET plan = ?
+                         WHERE owner = ? AND period > ? AND category = ? AND plan <> ?
+                        """).params(rubles, owner, since, code, rubles).update();
             }
-            jdbc.sql("""
-                    UPDATE category_month SET plan = ?
-                     WHERE owner = ? AND period >= ? AND category = ? AND plan <> ?
-                    """).params(rubles, owner, firstMutableMonth, code, rubles).update();
         }
     }
 }

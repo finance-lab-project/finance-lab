@@ -800,12 +800,39 @@ class MarchBudgetTest {
             assertThat(report.categories()).singleElement().satisfies(row -> {
                 assertThat(row.plan()).isEqualTo(report.spendingPlan());
                 assertThat(row.actual()).isEqualTo(BigInteger.valueOf(200));
+                assertThat(row.buffer()).isEqualTo(BigInteger.valueOf(-200));
             });
+            assertThat(store.read("owner-a", december.minusMonths(1)).categories()).singleElement()
+                    .satisfies(row -> assertThat(row.buffer()).isEqualTo(-200L));
 
             assertThat(owner.saveHistory(owner.get(october).html(), Map.of("plan-food", "0")).status())
                     .isEqualTo(302);
             assertThat(store.readYear("owner-a", 2027, december).spendingPlan())
                     .isEqualTo(BigInteger.valueOf(60000));
+        }
+    }
+
+    @Test
+    void januaryRolloverPreservesExplicitLegacyZero() {
+        YearMonth january = YearMonth.of(2028, 1);
+        try (var app = start(false, january.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-12', 100000, '0/1', 1)").update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-12', 'food', 'Food', 'essential', 1, 'amount', '30000', 30000)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2028-01', 'food', 0, 0)
+                    """).update();
+
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2028, january);
+            assertThat(report.spendingPlan()).isZero();
+            assertThat(jdbc.sql("""
+                    SELECT plan FROM category_month
+                     WHERE owner = 'owner-a' AND period = '2028-01' AND category = 'food'
+                    """).query(Long.class).single()).isZero();
         }
     }
 

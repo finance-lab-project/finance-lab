@@ -9,7 +9,7 @@
 )
 SELECT codes.category, coalesce(p.name, c.name) AS name, m.plan, m.actual, m.category IS NOT NULL AS recorded, m.explicit_plan,
        coalesce(m.plan, (SELECT r.plan FROM periods r WHERE r.category = codes.category
-                           AND (r.period <= :period OR (r.ordinal = 1 AND r.start IS NULL))
+                           AND r.period <= :period
                            AND (r.until IS NULL OR r.until > :period)), 0) AS effective_plan
   FROM codes JOIN category c ON c.code = codes.category
   LEFT JOIN configured p ON p.category = codes.category
