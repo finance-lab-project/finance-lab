@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS planning_category_rollover_copy (
 ) STRICT;
 
 -- In legacy versions a normal January settings save advanced the rollover revision
--- and created a category_month row. Capture untouched automatic copies before new entries.
+-- and could create a plan-only category_month snapshot. Preserve unmarked zero rates.
 INSERT INTO planning_category_rollover_copy (owner, since, category)
 SELECT p.owner, p.since, p.category FROM planning_category p
   JOIN planning_settings jan ON jan.owner = p.owner AND jan.since = p.since
@@ -98,8 +98,22 @@ SELECT p.owner, p.since, p.category FROM planning_category p
  WHERE substr(p.since, 6, 2) = '01' AND jan.revision = prev.revision + 1
    AND jan.income = prev.income AND jan.target = prev.target AND old.plan = p.plan
    AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = p.owner
-                    AND m.period = p.since AND m.category = p.category)
+                    AND m.period = p.since AND m.category = p.category
+                    AND (m.plan = 0 OR m.plan <> p.plan OR m.actual <> 0 OR m.revision <> 0
+                         OR EXISTS (SELECT 1 FROM month_actuals a WHERE a.owner = m.owner AND a.period = m.period)))
 ON CONFLICT DO NOTHING;
+
+-- Remove settings-only snapshots so projected rates contribute no opening buffer.
+DELETE FROM category_month
+ WHERE plan <> 0 AND actual = 0 AND revision = 0
+   AND NOT EXISTS (SELECT 1 FROM month_actuals a
+                    WHERE a.owner = category_month.owner AND a.period = category_month.period)
+   AND EXISTS (
+       SELECT 1 FROM planning_category_rollover_copy c
+         JOIN planning_category p USING (owner, since, category)
+        WHERE c.owner = category_month.owner AND c.since = category_month.period
+          AND c.category = category_month.category AND p.plan = category_month.plan
+   );
 
 -- A backdated history edit must preserve a category's already established start.
 CREATE TABLE IF NOT EXISTS category_plan_inception (

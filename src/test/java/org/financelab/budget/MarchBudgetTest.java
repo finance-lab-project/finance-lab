@@ -1085,7 +1085,8 @@ class MarchBudgetTest {
     @Test
     void januaryCopyPreservesLaterHistoricalRateForTheSameCategory() {
         YearMonth january = YearMonth.of(2028, 1);
-        try (var app = start(false, january.toString())) {
+        YearMonth february = january.plusMonths(1);
+        try (var app = start(false, february.toString())) {
             var jdbc = app.getBean(JdbcClient.class);
             jdbc.sql("INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 30000, '0/1', 1)").update();
             jdbc.sql("""
@@ -1112,8 +1113,11 @@ class MarchBudgetTest {
             assertThat(plans.save("owner-a", january, settings.revision(),
                     PlanCalculator.evaluate(settings.draft()))).isTrue();
             assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(35000));
-            assertThat(store.readYear("owner-a", 2028, january).spendingPlan())
-                    .isEqualTo(BigInteger.valueOf(420000));
+            var afterSave = store.readYear("owner-a", 2028, february);
+            assertThat(afterSave.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
+            assertThat(afterSave.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+            assertThat(store.read("owner-a", february).categories()).singleElement()
+                    .satisfies(leisure -> assertThat(leisure.buffer()).isEqualTo(11000));
 
             settings = plans.read("owner-a", january);
             var draft = settings.draft();
@@ -1127,7 +1131,7 @@ class MarchBudgetTest {
     }
 
     @Test
-    void januaryAlreadyOpenedBeforeUpgradeUsesDecemberOverride() throws Exception {
+    void januarySavedBeforeUpgradeUsesDecemberOverride() throws Exception {
         YearMonth january = YearMonth.of(2028, 1);
         try (var app = startCashTest(january.toString())) {
             var jdbc = app.getBean(JdbcClient.class);
@@ -1143,7 +1147,8 @@ class MarchBudgetTest {
                     """).update();
             jdbc.sql("""
                     INSERT INTO category_month (owner, period, category, plan, actual)
-                    VALUES ('owner-a', '2027-12', 'leisure', 35000, 24000)
+                    VALUES ('owner-a', '2027-12', 'leisure', 35000, 24000),
+                           ('owner-a', '2028-01', 'leisure', 30000, 0)
                     """).update();
 
             jdbc.sql("DROP TABLE planning_category_rollover_copy").update();
@@ -1155,6 +1160,7 @@ class MarchBudgetTest {
             var year = store.readYear("owner-a", 2028, january);
             assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(420000));
             assertThat(year.totalBuffer()).isEqualTo(BigInteger.valueOf(11000));
+            assertThat(jdbc.sql("SELECT period FROM category_month").query(String.class).single()).isEqualTo("2027-12");
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var form = reviewPage(mvc, "/months/2028-01?edit=true").expectFirst("#month-form");
             cashPost(mvc, form, Map.of("amount-leisure", "800")).andExpect(status().isFound());

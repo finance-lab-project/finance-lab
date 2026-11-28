@@ -156,11 +156,12 @@ class PlanStore {
                     INSERT INTO planning_category (owner, since, category, name, kind, addition_order, unit, value, plan)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """).params(owner, since, code, row.name().strip(), row.group(), i + 1, row.unit(), row.value(), rubles).update();
-            if (Long.valueOf(rubles).equals(previousRates.get(code))) {
+            boolean rolloverCopy = Long.valueOf(rubles).equals(previousRates.get(code));
+            if (rolloverCopy) {
                 jdbc.sql("INSERT INTO planning_category_rollover_copy (owner, since, category) VALUES (?, ?, ?)")
                         .params(owner, since, code).update();
             }
-            if (recordMonth) {
+            if (recordMonth && !rolloverCopy) {
                 int added = jdbc.sql("""
                         INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
                         ON CONFLICT(owner, period, category) DO NOTHING
@@ -171,7 +172,7 @@ class PlanStore {
                             """).params(owner, since, code).update();
                 }
             }
-            if (refreshInherited) {
+            if (refreshInherited && !rolloverCopy) {
                 // An explicit rate supersedes the calculated setting for inherited rows that follow it.
                 jdbc.sql("""
                         UPDATE category_month SET plan = ?
