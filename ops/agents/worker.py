@@ -12,7 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from subscription import Waiting, agent, preflight
+from board_status import deliver, previous_blocker, transition
+from subscription import OwnerAction, Waiting, agent, authenticated_cli, preflight
 
 REPO = "finance-lab-project/finance-lab"
 OWNER = "anton415"
@@ -86,17 +87,19 @@ def save(path, state):
 def protected():
     workflow = api(endpoint("actions/permissions/workflow"))
     if workflow.get("can_approve_pull_request_reviews") is not True:
-        raise Waiting("Enable ‘Allow GitHub Actions to create and approve pull requests’ for Finance Lab")
+        raise OwnerAction("Enable ‘Allow GitHub Actions to create and approve pull requests’ for Finance Lab")
     settings = api("repos/" + REPO)
     rules = api(endpoint("branches/main/protection"))
     reviews = rules.get("required_pull_request_reviews") or {}
+    approval_count = reviews.get("required_approving_review_count")
+    pr_rule = approval_count == 0 or (isinstance(approval_count, int) and approval_count > 0
+                                      and reviews.get("dismiss_stale_reviews"))
     checks = rules.get("required_status_checks") or {}
     if not (settings.get("allow_auto_merge") and settings.get("allow_squash_merge")
-            and reviews.get("required_approving_review_count", 0) >= 1
-            and reviews.get("dismiss_stale_reviews") and rules.get("enforce_admins", {}).get("enabled")
+            and pr_rule and rules.get("enforce_admins", {}).get("enabled")
             and checks.get("strict") and any(c.get("context") == "verify" and
             c.get("app_id") == 15368 for c in checks.get("checks", []))):
-        raise Waiting("The repository does not yet enforce the sprint merge rules")
+        raise OwnerAction("The repository does not yet enforce the sprint merge rules")
 
 
 def skip_file(name):
@@ -159,7 +162,7 @@ def record(pr, sha, decision, summary):
        "-f", "summary=" + review_body(summary))
 
 
-def advance(issue, state, persist):
+def advance(issue, state, persist, report):
     number = issue["number"]
     branch = f"sprint/issue-{number}"
     pulls = api(endpoint(f"pulls?head={REPO.split('/')[0]}:{branch}&base=main&state=all"))
@@ -168,6 +171,8 @@ def advance(issue, state, persist):
         raise Blocked("The sprint pull request was already closed; check the issue before retrying")
     if pr and (pr["user"]["login"] != OWNER or pr["head"]["repo"]["full_name"] != REPO):
         raise Blocked("Unexpected pull request author or repository")
+    if pr:
+        state["pr_url"] = pr["html_url"]
     sha = pr["head"]["sha"] if pr else None
     feedback = ""
     if pr:
@@ -179,6 +184,7 @@ def advance(issue, state, persist):
             return
         status, detail = ci(sha)
         if status == "pending":
+            report("ci", "Waiting for the required Maven check.", "GitHub Actions runs verify.", pr["html_url"])
             return
         if status == "failed":
             feedback = "The required Maven check failed: " + detail
@@ -189,6 +195,8 @@ def advance(issue, state, persist):
                 except subprocess.CalledProcessError:
                     pass
         elif state.get("review", {}).get("sha") == sha:
+            report("review", "The independent decision is recorded locally.",
+                   "The controller checks the recorded review and merge conditions.", pr["html_url"])
             cached = state["review"]
             reviews = json.loads(gh("api", "--paginate", "--slurp", endpoint(f"pulls/{pr['number']}/reviews?per_page=100")))
             latest = next((r for page in reversed(reviews) for r in reversed(page)
@@ -244,7 +252,9 @@ def advance(issue, state, persist):
             review = agent(work, POLICY + "Independently review the following diff against every "
                            "acceptance example, including test coverage. Decide approve, changes or blocked. "
                            "Explain concrete evidence or necessary fixes.\n" + spec + "\nDIFF\n" + changed,
-                           ["decision", "summary"], False)
+                           ["decision", "summary"], False, on_ready=lambda: report(
+                               "review", "CI passed; independent review is running.",
+                               "The reviewer checks this revision.", pr["html_url"]))
             if review["decision"] == "blocked":
                 raise Blocked(review["summary"])
             state["review"] = {**review, "sha": sha}
@@ -255,9 +265,13 @@ def advance(issue, state, persist):
         result = agent(work, POLICY + "Implement this issue, including relevant regression tests. "
                        "Edit files in this directory. Return blocked for ambiguous requirements or changes "
                        "to the delivery system.\n" + spec + "\nFeedback:\n" + feedback,
-                       ["decision", "summary"], True)
+                       ["decision", "summary"], True, on_ready=lambda: report(
+                           "working", "The product worker is implementing the issue.",
+                           "The worker implements and tests the acceptance examples."))
         if result["decision"] == "blocked":
             raise Blocked(result["summary"])
+        report("working", "The implementation is ready for publication.",
+               "The controller publishes the revision for CI and review.")
         apply_edits(work, checkout)
         if not git(checkout, "diff", "--cached", "--name-only"):
             raise Blocked("Implementation produced no changes. " + result["summary"])
@@ -278,36 +292,96 @@ def open_pr(number, branch):
        f"Deliver sprint issue #{number}", "--body", f"Closes #{number}\n\nImplemented with subscription Codex on the Mac.")
 
 
+def prepare_status(issue):
+    number = issue["number"]
+    path = ROOT / f"{number}.json"
+    state = json.loads(path.read_text()) if path.exists() else {}
+    digest = hashlib.sha256((issue["title"] + issue["body"]).encode()).hexdigest()
+
+    def persist():
+        save(path, state)
+
+    if state.get("blocked") == digest:
+        if not state.get("progress"):
+            reason = "The product worker previously reported a blocker on this issue."
+            link = f"https://github.com/{REPO}/issues/{number}"
+            try:
+                previous = previous_blocker(gh, REPO, OWNER, number)
+                if previous:
+                    reason, link = previous
+            except (subprocess.SubprocessError, OSError, ValueError, KeyError):
+                pass  # An unavailable history must not keep a known blocker in In Progress.
+            transition(state, "blocked", reason,
+                       f"Maintainer: [review the blocker]({link}), resolve it and update the issue to retry.",
+                       persist, state.get("pr_url"), number)
+    elif state.get("spec") != digest:
+        previous_block = bool(state.get("blocked"))
+        progress = state.get("progress", {})
+        state = {"spec": digest, **{k: v for k, v in state.items() if k in ("pushing", "pr_url")}}
+        if previous_block:
+            transition(state, "queued", "The issue specification changed after a blocker.",
+                       "The controller will check prerequisites and claim an available work slot.",
+                       persist, state.get("pr_url"), number)
+        else:
+            if progress.get("stage") == "queued":
+                state["progress"] = progress
+            persist()
+    deliver(state, persist, gh, REPO, OWNER, number)
+    return state
+
+
 def tick():
     pages = json.loads(gh("api", "--paginate", "--slurp", endpoint(f"issues?state=open&creator={OWNER}&per_page=100")))
     today = dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).date()
     items = sorted((i for page in pages for i in page if eligible(i, today)), key=lambda i: i["number"])
+    if not items:
+        return
+    if api("user")["login"] != OWNER:
+        raise OwnerAction("The Mac GitHub identity must be " + OWNER)
     active = ROOT / "active.json"
     current = json.loads(active.read_text()) if active.exists() else None
     items.sort(key=lambda i: i["number"] != current)
+    # Reconcile every checkpoint before choosing the one issue that may run.
+    states = {i["number"]: prepare_status(i) for i in items}
     for issue in items:
         state_path = ROOT / f"{issue['number']}.json"
-        state = json.loads(state_path.read_text()) if state_path.exists() else {}
-        digest = hashlib.sha256((issue["title"] + issue["body"]).encode()).hexdigest()
-        if state.get("blocked") == digest:
-            continue
-        if state.get("spec") != digest:
-            state = {"spec": digest, **{k: v for k, v in state.items() if k == "pushing"}}
+        state = states[issue["number"]]
+
+        def persist():
             save(state_path, state)
+
+        def report(stage, reason, action, pr_url=None):
+            transition(state, stage, reason, action, persist, pr_url or state.get("pr_url"), issue["number"])
+            deliver(state, persist, gh, REPO, OWNER, issue["number"])
+
+        if state.get("blocked"):
+            continue
         try:
             deps = [api(endpoint(f"issues/{n}")) for n in dependencies(issue["body"])]
-            if any(d["state"] != "closed" or d.get("state_reason") == "not_planned" or "pull_request" in d for d in deps):
+            outstanding = [f"#{d['number']}" for d in deps if d["state"] != "closed"
+                           or d.get("state_reason") == "not_planned" or "pull_request" in d]
+            if outstanding:
+                report("dependency", "Waiting on " + ", ".join(outstanding) + ".",
+                       "The controller rechecks prerequisites on its next poll.")
                 continue
             protected()
-            if api("user")["login"] != OWNER:
-                raise Waiting("The Mac GitHub identity must be " + OWNER)
             save(active, issue["number"])
-            advance(issue, state, lambda: save(state_path, state))
+            stage = state.get("progress", {}).get("stage")
+            if stage == "sign-in":
+                authenticated_cli()
+            if stage in (None, "dependency", "queued", "owner", "sign-in"):
+                report("working", "The product worker claimed this issue.",
+                       "The worker implements the acceptance examples.")
+            advance(issue, state, persist, report)
+        except OwnerAction as exc:
+            report(exc.stage, str(exc), "Maintainer: restore the reported prerequisite. The controller will recheck it.")
+            raise
+        except Waiting as exc:
+            report("waiting", str(exc), "The controller retries on the next poll.")
+            raise
         except Blocked as exc:
-            message = f"Sprint work blocked. {str(exc)[:1200]}\n\nEdit the issue to retry."
-            gh("issue", "comment", str(issue["number"]), "-R", REPO, "--body", message)
-            state["blocked"] = digest
-            save(state_path, state)
+            state["blocked"] = state["spec"]
+            report("blocked", str(exc)[:1200], "Maintainer: resolve the reported blocker and update the issue to retry.")
             if active.exists() and json.loads(active.read_text()) == issue["number"]:
                 active.unlink()
             continue
