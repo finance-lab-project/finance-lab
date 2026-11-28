@@ -103,7 +103,7 @@ class MonthController {
         var errors = new HashMap<String, String>();
         if (planRevision == current.planRevision()) {
             MonthActuals actuals = MonthActuals.parse(current, draft, errors);
-            var correction = MonthActuals.correctionDate(month, store.cash(owner, month), draft, errors);
+            var correction = MonthActuals.correctionDate(month, store.reconciliationDate(owner), draft, errors);
             if (!errors.isEmpty()) {
                 response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
                 model.addAttribute("revision", revision);
@@ -141,6 +141,7 @@ class MonthController {
         }
         model.addAttribute("editing", editing);
         if (editing) {
+            model.addAttribute("cashReferenceDate", store.reconciliationDate(owner));
             var original = MonthActuals.savedFields(budget);
             model.addAttribute("original", original);
             model.mergeAttributes(Map.of("draft", original, "errors", Map.of(), "revision", budget.figures().revision()));

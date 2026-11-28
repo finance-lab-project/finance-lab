@@ -56,14 +56,13 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
         }
     }
 
-    static LocalDate correctionDate(YearMonth month, MonthStore.Cash cash, Map<String, String> draft,
+    static LocalDate correctionDate(YearMonth month, LocalDate referenceDate, Map<String, String> draft,
                                     Map<String, String> errors) {
         String value = draft.getOrDefault("correctionDate", "");
         if (value.isBlank()) return null;
         try {
             LocalDate date = LocalDate.parse(value);
-            if (cash != null && YearMonth.from(date).equals(month) && date.isBefore(cash.date())
-                    && YearMonth.from(cash.date()).equals(month)) return date;
+            if (referenceDate != null && YearMonth.from(date).equals(month) && date.isBefore(referenceDate)) return date;
         } catch (DateTimeParseException invalid) {
             // Report the same field error for malformed and out-of-range dates.
         }

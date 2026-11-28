@@ -55,7 +55,7 @@ class MonthStore {
         if (month.isBefore(referenceMonth)) return null;
         BigInteger throughReferenceMonth = movement(owner, referenceMonth);
         BigInteger laterMovement = jdbc.sql("""
-                SELECT amount FROM cash_movement WHERE owner = ? AND period = ? AND effective_date > ?
+                SELECT amount FROM cash_movement WHERE owner = ? AND period <= ? AND effective_date > ?
                 """).params(owner, referenceMonth.toString(), reference.date().toString())
                 .query((rs, i) -> new BigInteger(rs.getString(1))).list().stream()
                 .reduce(BigInteger.ZERO, BigInteger::add);
@@ -63,6 +63,10 @@ class MonthStore {
                 .subtract(throughReferenceMonth).add(laterMovement).add(reference.legacyLaterMovement());
         BigInteger throughMonth = month.equals(referenceMonth) ? throughReferenceMonth : movement(owner, month);
         return new Cash(reference.date(), reference.cardBalance(), opening, opening.add(throughMonth));
+    }
+
+    LocalDate reconciliationDate(String owner) {
+        return reference(owner).map(Reference::date).orElse(null);
     }
 
     private Optional<Reference> reference(String owner) {
@@ -86,12 +90,9 @@ class MonthStore {
     }
 
     private void trackMovement(String owner, YearMonth month, LocalDate correction, BigInteger change) {
-        if (correction != null) {
-            var reference = reference(owner).orElse(null);
-            if (reference == null || !month.equals(YearMonth.from(reference.date()))
-                    || !correction.isBefore(reference.date())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Дата сверки изменилась.");
-            }
+        LocalDate referenceDate = reconciliationDate(owner);
+        if (correction != null && (referenceDate == null || !correction.isBefore(referenceDate))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Дата сверки изменилась.");
         }
         if (change.signum() == 0) return;
 
@@ -100,8 +101,7 @@ class MonthStore {
             LocalDate today = period.todayInMoscow();
             effectiveDate = today;
             // A save on the reference day follows the already recorded card snapshot.
-            if (month.equals(YearMonth.from(effectiveDate))
-                    && reference(owner).map(Reference::date).filter(today::equals).isPresent()) {
+            if (today.equals(referenceDate)) {
                 effectiveDate = effectiveDate.plusDays(1);
             }
         }

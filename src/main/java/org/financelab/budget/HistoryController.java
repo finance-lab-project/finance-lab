@@ -65,7 +65,7 @@ class HistoryController {
             long income = MonthActuals.amount("income", draft, errors);
             long contributions = MonthActuals.amount("contributions", draft, errors);
             List<HistoricalEdit> categories = parseCategories(saved, draft, errors);
-            var correction = MonthActuals.correctionDate(month, store.cash(owner, month), draft, errors);
+            var correction = MonthActuals.correctionDate(month, store.reconciliationDate(owner), draft, errors);
             if (!errors.isEmpty()) {
                 response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
                 model.addAttribute("draft", draft);
@@ -93,7 +93,7 @@ class HistoryController {
     }
 
     private String view(Model model, String owner, YearMonth month, History saved) {
-        model.addAttribute("cash", store.cash(owner, month));
+        model.addAttribute("cashReferenceDate", store.reconciliationDate(owner));
         var original = savedFields(saved);
         model.addAttribute("original", original);
         model.mergeAttributes(Map.of("draft", original, "errors", Map.of()));
