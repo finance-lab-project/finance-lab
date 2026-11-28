@@ -130,8 +130,12 @@ class MonthStore {
         this.period = period;
         this.jdbc = jdbc;
         this.readMonthSql = new ClassPathResource("sql/queries/read-month.sql").getContentAsString(StandardCharsets.UTF_8);
-        this.readYearPlansSql = new ClassPathResource("sql/queries/read-year-plans.sql").getContentAsString(StandardCharsets.UTF_8);
-        this.readHistorySql = new ClassPathResource("sql/queries/read-history.sql").getContentAsString(StandardCharsets.UTF_8);
+        var categoryPlanPeriods = new ClassPathResource("sql/queries/category-plan-periods.sql")
+                .getContentAsString(StandardCharsets.UTF_8);
+        this.readYearPlansSql = categoryPlanPeriods + new ClassPathResource("sql/queries/read-year-plans.sql")
+                .getContentAsString(StandardCharsets.UTF_8);
+        this.readHistorySql = categoryPlanPeriods + new ClassPathResource("sql/queries/read-history.sql")
+                .getContentAsString(StandardCharsets.UTF_8);
         this.replaceMonthSql = new ClassPathResource("sql/queries/replace-month.sql").getContentAsString(StandardCharsets.UTF_8);
     }
 
@@ -225,6 +229,7 @@ class MonthStore {
         var terms = plans.terms(owner, current);
         var categories = jdbc.sql(readHistorySql)
                 .param("owner", owner).param("period", month.toString()).param("since", terms == null ? "" : terms.since())
+                .param("last", month.withMonth(12).toString())
                 .query((rs, index) -> new HistoricalCategory(rs.getString("category"), rs.getString("name"),
                         rs.getLong("plan"), rs.getLong("actual"), rs.getBoolean("recorded"),
                         rs.getLong("effective_plan"))).list();

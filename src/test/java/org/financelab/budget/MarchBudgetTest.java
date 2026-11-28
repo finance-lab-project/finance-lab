@@ -685,6 +685,39 @@ class MarchBudgetTest {
     }
 
     @Test
+    void historyFormBackfillsFirstLegacyRateForEarlierActual() throws Exception {
+        YearMonth december = YearMonth.of(2027, 12);
+        try (var app = start(false, december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES ('owner-a', '2027-11', 100000, '0/1', 1)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                      ('owner-a', '2027-11', 'food', 'Food', 'essential', 1, 'amount', '30000', 30000)
+                    """).update();
+            var owner = signedIn(app, "owner-a");
+            var store = app.getBean(MonthStore.class);
+            String october = "/history/2027-10";
+            var form = owner.get(october).html();
+            assertThat(form.expectFirst("#plan-food").val()).isEmpty();
+            assertThat(owner.saveHistory(form, Map.of("amount-food", "200")).status()).isEqualTo(302);
+
+            var report = store.readYear("owner-a", 2027, december);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+            assertThat(report.categories()).singleElement().satisfies(row -> {
+                assertThat(row.plan()).isEqualTo(report.spendingPlan());
+                assertThat(row.actual()).isEqualTo(BigInteger.valueOf(200));
+            });
+
+            assertThat(owner.saveHistory(owner.get(october).html(), Map.of("plan-food", "0")).status())
+                    .isEqualTo(302);
+            assertThat(store.readYear("owner-a", 2027, december).spendingPlan())
+                    .isEqualTo(BigInteger.valueOf(60000));
+        }
+    }
+
+    @Test
     void laterSettingsCannotEraseAnEarlierLegacyPlan() {
         try (var app = start(false, "2028-01")) {
             var jdbc = app.getBean(JdbcClient.class);
