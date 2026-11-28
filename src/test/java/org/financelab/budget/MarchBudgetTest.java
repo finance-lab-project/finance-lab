@@ -894,6 +894,30 @@ class MarchBudgetTest {
     }
 
     @Test
+    void savedPriorYearExpensesRecalculateAllocationAndPreserveHistoricalActuals() throws Exception {
+        try (var app = start(false)) {
+            var owner = signedIn(app, "owner-a");
+            var draft = new PlanDraft("101", "incomePercent", "50", List.of(
+                    new PlanDraft.Row("", "Продукты", "essential", "amount", "40"),
+                    new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "60"),
+                    new PlanDraft.Row("", "Поездки", "discretionary", "poolPercent", "40")));
+            assertThat(owner.plan(owner.get("/settings").html(), draft).status()).isEqualTo(204);
+            String food = settingsDraft(owner.get("/settings").html()).rows().getFirst().code();
+            String december = "/history/2026-12";
+            assertThat(owner.get(MARCH).html().expectFirst("#row-" + food + " .plan").text()).isEqualTo("40 ₽");
+            assertThat(owner.saveHistory(owner.get(december).html(), Map.of("amount-" + food, "366")).status())
+                    .isEqualTo(302);
+
+            Document march = owner.get(MARCH).html();
+            assertThat(march.expectFirst("#plan-income").text()).isEqualTo("101 ₽");
+            assertThat(march.select(".plan").eachText()).containsExactly("31 ₽", "11 ₽", "8 ₽");
+            assertAllocations(march, "51", "19");
+            assertThat(owner.get("/months/2026-12").html().expectFirst("#row-" + food + " .actual").text())
+                    .isEqualTo("366 ₽");
+        }
+    }
+
+    @Test
     void explicitlySavedZeroExpensesCountAtRolloverAndAfterHistorySave() throws Exception {
         var draft = new PlanDraft("10000", "incomePercent", "40", List.of(
                 new PlanDraft.Row("", "Транспорт", "essential", "amount", "1000"),
