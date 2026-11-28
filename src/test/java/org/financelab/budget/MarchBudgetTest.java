@@ -54,7 +54,7 @@ class MarchBudgetTest {
     void measuresSyntheticScreenTraffic() throws Exception {
         Map<String, String> screens = new LinkedHashMap<>();
         screens.put("/months/{month}", MARCH);
-        screens.put("/history/{month}", "/history/2027-03");
+        screens.put("/history/{month}", "/history/2027-02"); // History only serves completed months.
         screens.put("/investments/{month}", "/investments/2027-03");
         screens.put("/years/{year}", "/years/2027");
         screens.put("/settings", "/settings");
@@ -63,10 +63,12 @@ class MarchBudgetTest {
         try (var app = start()) {
             var visitor = signedIn(app, "owner-a");
             var probe = new Browser(app);
-            for (String path : screens.values()) {
-                assertThat(visitor.measure("GET", path, 200).error()).isFalse();
+            for (var screen : screens.entrySet()) {
+                assertThat(visitor.measure("GET", screen.getValue(), 200).error())
+                        .as("Warm-up GET %s (expected HTTP 200)", screen.getKey()).isFalse();
             }
-            assertThat(probe.measure("HEAD", "/", 302).error()).isFalse();
+            assertThat(probe.measure("HEAD", "/", 302).error())
+                    .as("Warm-up HEAD / (expected HTTP 302)").isFalse();
 
             Map<String, List<RequestSample>> samples = new LinkedHashMap<>();
             screens.keySet().forEach(route -> samples.put("GET " + route, new ArrayList<>()));
