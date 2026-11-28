@@ -685,6 +685,39 @@ class MarchBudgetTest {
     }
 
     @Test
+    void laterSettingsCannotEraseAnEarlierLegacyPlan() {
+        try (var app = start(false, "2028-01")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                      ('owner-a', '2027-11', 'food', 30000, 100), ('owner-a', '2027-12', 'food', 30000, 150)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES
+                      ('owner-a', '2027-05', 100000, '0/1', 1), ('owner-a', '2028-01', 100000, '0/1', 2)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                      ('owner-a', '2028-01', 'food', 'Food', 'essential', 1, 'amount', '32000', 32000)
+                    """).update();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2028, 1));
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+        }
+    }
+
+    @Test
+    void projectsRatesThroughTheLastSupportedDecember() {
+        try (var app = start(false, "2027-03")) {
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '9999-11', 'food', 30000, 0), ('owner-a', '9999-12', 'food', 35000, 0)
+                    """).update();
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 9999, YearMonth.of(2027, 3));
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(365000));
+        }
+    }
+
+    @Test
     void historicalRateSupersedesOlderSettingsUntilTheNextDatedRate() {
         try (var app = start(false, "2027-12")) {
             var jdbc = app.getBean(JdbcClient.class);

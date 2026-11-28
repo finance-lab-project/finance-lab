@@ -201,12 +201,13 @@ class MonthStore {
             categories.put(code, category.withBalance(balance));
         });
         jdbc.sql(readYearPlansSql).param("owner", owner).param("january", january.toString())
-                .param("end", nextJanuary.toString()).query(rs -> {
+                .param("last", nextJanuary.minusMonths(1).toString()).query(rs -> {
                     String code = rs.getString("category");
                     String name = rs.getString("name");
                     var category = categories.computeIfAbsent(code, key -> YearReport.Category.empty(key, name));
                     var first = YearMonth.parse(rs.getString("first_month"));
-                    var next = YearMonth.parse(rs.getString("next_month"));
+                    String nextMonth = rs.getString("next_month");
+                    var next = nextMonth == null ? nextJanuary : YearMonth.parse(nextMonth);
                     long monthsAtRate = first.until(next, ChronoUnit.MONTHS);
                     var plan = BigInteger.valueOf(rs.getLong("plan")).multiply(BigInteger.valueOf(monthsAtRate));
                     categories.put(code, category.withPlan(plan));
