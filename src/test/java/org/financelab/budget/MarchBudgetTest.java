@@ -20,8 +20,11 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
@@ -82,6 +85,24 @@ class MarchBudgetTest {
             assertThat(signedInPolicy.status()).isEqualTo(200);
             assertThat(signedInPolicy.html().selectFirst("main").text())
                     .isEqualTo(publicPolicy.html().selectFirst("main").text());
+        }
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void invalidPlanningIncomeIsExcludedFromApplicationLogs(CapturedOutput output) throws Exception {
+        String password = "synthetic-privacy-test-password";
+        String marker = "synthetic-private-planning-income";
+        try (var app = startPilot(password)) {
+            var browser = new Browser(app);
+            browser.login("pilot-owner", password);
+            var page = browser.get(EDIT);
+            var response = browser.post("/months/linked-value", Map.of(
+                    "unit", "percent", "value", "10", "planningIncome", marker, "_csrf", csrf(page.html())));
+
+            assertThat(output.getAll().contains(marker)).as("application logs contain the rejected value").isFalse();
+            assertThat(response.status()).isEqualTo(400);
+            assertThat(response.html().body().text()).isEqualTo("Укажите корректный плановый доход.");
         }
     }
 
