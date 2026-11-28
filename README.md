@@ -41,7 +41,7 @@ Open [the local budget](http://127.0.0.1:8080/) and sign in as `owner-a` with th
 
 ## Releases
 
-[Published releases](https://github.com/finance-lab-project/finance-lab/releases) include the deployed revision, user-visible changes, JAR and checksum. The [weekly release procedure](docs/budget-pilot-guide.md#releases) covers the Sunday backup, deployment verification and recovery.
+[Published releases](https://github.com/finance-lab-project/finance-lab/releases) include the deployed revision, user-visible changes, JAR and checksum. The [weekly release procedure](docs/budget-pilot-guide.md#releases) covers the Saturday backup, deployment verification and recovery.
 
 ## Run the private pilot
 

@@ -6,7 +6,7 @@ This guide records the Budget pilot setup, fixture walkthrough and original veri
 
 Each milestone delivers a usable version at the same HTTPS address. Milestone releases and smaller patch releases use the weekly maintenance window. Build and test the candidate in advance and retain the versioned artifact, its checksum and the previous working binary.
 
-- The [weekly SQLite backup](sqlite-backup.md) starts on Sunday at 03:00 Europe/Moscow. It verifies the stored copy and checks saved budget data using private reference values, including weeks without a release candidate.
+- The [weekly SQLite backup](sqlite-backup.md) starts on Saturday at 03:00 Europe/Moscow. It verifies the stored copy and checks saved budget data using private reference values, including weeks without a release candidate.
 - If a tested candidate is ready and the checks pass, deploy it in that window. Keep writes consistent across the switch, verify sign-in and compare the saved month and yearly total before reopening writes. A failed backup or pre-update check defers the update. If post-update verification fails, recover the service while preserving accepted saves.
 - Publish the matching Git tag and GitHub Release after verification at the permanent address. Include the deployed revision and user-visible changes. Close the milestone when its version is available.
 

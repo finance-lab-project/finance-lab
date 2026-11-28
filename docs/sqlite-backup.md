@@ -26,7 +26,7 @@ The [service](../ops/finance-budget-backup.service) takes a snapshot on the pilo
 VM and uploads an age-encrypted copy to private Object Storage under
 `database/sqlite/`. It downloads the ciphertext to verify its SHA-256, then runs
 the SQLite and figure checks against the snapshot used for that upload. The
-[timer](../ops/finance-budget-backup.timer) starts the job every Sunday at
+[timer](../ops/finance-budget-backup.timer) starts the job every Saturday at
 **03:00 Europe/Moscow** (00:00 UTC), including weeks without a release candidate.
 Systemd starts a missed run when the timer resumes.
 
@@ -80,10 +80,19 @@ the timer.
 ```sh
 sudo systemd-analyze verify /etc/systemd/system/finance-budget-backup.service \
   /etc/systemd/system/finance-budget-backup.timer
-systemd-analyze calendar 'Sun *-*-* 03:00:00 Europe/Moscow'
+systemd-analyze calendar 'Sat *-*-* 03:00:00 Europe/Moscow'
 sudo systemctl daemon-reload
 sudo systemctl start finance-budget-backup.service && sudo systemctl enable --now finance-budget-backup.timer
 systemctl list-timers --all finance-budget-backup.timer
+```
+
+When changing the schedule on an existing pilot, install the updated timer and check its next trigger in Moscow time. The backup service can also run on demand for an owner-requested early release. In that case, require a fresh verified backup for that release window.
+
+```sh
+sudo install -m 0644 ops/finance-budget-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart finance-budget-backup.timer
+TZ=Europe/Moscow systemctl list-timers --all finance-budget-backup.timer
 ```
 
 ## Gate deployment on the weekly check
@@ -92,7 +101,7 @@ systemctl list-timers --all finance-budget-backup.timer
 sudo journalctl --utc -u finance-budget-backup.service --since '7 days ago' --no-pager
 ```
 
-Require the most recent attempt in the current Sunday maintenance window to have
+Require the most recent attempt in the current maintenance window to have
 completed successfully with a `Weekly budget backup verified.` receipt. The
 receipt records the object key and checksum. Failed checks exit nonzero and log
 the stage or field that failed. Keep the receipt and the reference used for the
