@@ -12,12 +12,20 @@ COLUMNS = {
     "ci": "In Progress",
     "waiting": "In Progress",
     "dependency": "Todo",
+    "queued": "Todo",
+    "owner": "Blocked",
     "blocked": "Blocked",
+}
+UNBLOCKER = {
+    "working": "Product worker", "review": "Independent reviewer and sprint controller",
+    "ci": "GitHub Actions", "waiting": "Sprint controller", "queued": "Sprint controller",
+    "dependency": "Prerequisite issue owners", "blocked": "Maintainer", "owner": "Maintainer",
 }
 
 
-def transition(state, stage, reason, action, persist, pr_url=None):
-    values = dict(stage=stage, reason=reason, next_action=action, pr=pr_url)
+def transition(state, stage, reason, action, persist, pr_url=None, issue=None):
+    values = dict(stage=stage, reason=reason, next_action=action, pr=pr_url,
+                  issue=issue, unblocker=UNBLOCKER[stage])
     old = state.get("progress", {})
     if all(old.get(key) == value for key, value in values.items()):
         return
@@ -32,9 +40,10 @@ def publish_comment(gh, repo, owner, number, event):
     pages = json.loads(gh("api", "--paginate", "--slurp", path))
     body = (f"{MARKER}\n**Sprint status · {event['stage']}**\n\n{event['reason']}\n\n"
             f"Next action: {event['next_action']}\n\n"
+            f"Responsible: {event.get('unblocker') or UNBLOCKER[event['stage']]}\n\n"
             f"{event['actor']} · {event['at']}")
     if event["pr"]:
-        body += f"\n\n{event['pr']}"
+        body += f"\n\n[Pull request]({event['pr']}) · [CI checks]({event['pr']}/checks)"
     previous = next((c for page in pages for c in page
                      if c["user"]["login"] == owner and c["body"].startswith(MARKER)), None)
     if previous is None:
@@ -42,6 +51,18 @@ def publish_comment(gh, repo, owner, number, event):
     elif previous["body"] != body:
         gh("api", f"repos/{repo}/issues/comments/{previous['id']}",
            "-X", "PATCH", "-f", "body=" + body)
+
+
+def previous_blocker(gh, repo, owner, number):
+    path = f"repos/{repo}/issues/{number}/comments"
+    pages = json.loads(gh("api", "--paginate", "--slurp", path))
+    for page in reversed(pages):
+        for comment in reversed(page):
+            body = comment["body"]
+            if comment["user"]["login"] == owner and body.startswith("Sprint work blocked. "):
+                reason = body.removeprefix("Sprint work blocked. ").split("\n\nEdit the issue to retry.")[0]
+                return reason[:1200], comment["html_url"]
+    return None
 
 
 def publish_board(gh, repo, number, event):

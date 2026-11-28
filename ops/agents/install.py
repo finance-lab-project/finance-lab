@@ -61,7 +61,7 @@ def main():
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = ROOT / "bin"
     target.mkdir(exist_ok=True, mode=0o700)
-    for name in ["worker.py", "subscription.py", "board_status.py"]:
+    for name in ["subscription.py", "board_status.py", "worker.py"]:
         tmp = target / (name + ".tmp")
         shutil.copyfile(source / name, tmp)
         tmp.replace(target / name)

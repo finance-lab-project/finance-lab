@@ -12,6 +12,10 @@ class Waiting(Exception):
     """A later poll may retry without changing the issue."""
 
 
+class OwnerAction(Waiting):
+    """A maintainer must restore access or configuration before a retry can succeed."""
+
+
 def binary():
     bundled = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
     return str(bundled) if bundled.is_file() else shutil.which("codex") or "codex"
@@ -40,7 +44,7 @@ def preflight():
     login = subprocess.run(args + ["login", "status"], env=environment(), capture_output=True,
                            text=True, timeout=15)
     if login.returncode or "logged in using chatgpt" not in (login.stdout + login.stderr).lower():
-        raise Waiting("Codex requires Sign in with ChatGPT on this Mac")
+        raise OwnerAction("Codex requires Sign in with ChatGPT on this Mac")
     with tempfile.TemporaryDirectory() as empty, subprocess.Popen(
             args + ["app-server", "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, cwd=empty, env=environment()) as proc:

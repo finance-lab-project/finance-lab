@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -10,6 +11,83 @@ import worker
 
 
 class BoardStatusTests(unittest.TestCase):
+    def test_active_issue_does_not_hide_a_legacy_blocker_or_its_resumption(self):
+        body = ("### Sprint start (Moscow)\n2020-01-01\n### User outcome\nShow status"
+                "\n### Acceptance examples\nDisplay the next action")
+
+        def issue(number):
+            return {"number": number, "title": "Sprint work", "body": body, "user": {"login": worker.OWNER}}
+
+        waiting, active = issue(78), issue(84)
+        digest = hashlib.sha256((waiting["title"] + body).encode()).hexdigest()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(worker, "ROOT", Path(tmp)), \
+                patch.object(worker, "gh", return_value=json.dumps([[waiting, active]])) as gh, \
+                patch.object(worker, "api", return_value={"login": worker.OWNER}), \
+                patch.object(worker, "protected"), patch.object(worker, "advance") as advance, \
+                patch.object(board_status, "publish_board") as board, patch.object(board_status, "publish_comment"):
+            path = Path(tmp, "78.json")
+            worker.save(path, {"spec": digest, "blocked": digest, "attempts": 3})
+            worker.save(Path(tmp, "active.json"), 84)
+            worker.tick()
+            blocked = json.loads(path.read_text())["progress"]
+            self.assertEqual((78, "blocked", "Maintainer"), (blocked["issue"], blocked["stage"], blocked["unblocker"]))
+            self.assertEqual(84, advance.call_args.args[0]["number"])
+            # Simulate a lost acknowledgement immediately before the issue description changes.
+            state = json.loads(path.read_text())
+            state["progress"]["delivered"] = ["comment"]
+            worker.save(path, state)
+            waiting["body"] += "\nReproduce with a July category."
+            gh.return_value = json.dumps([[waiting, active]])
+            board.reset_mock()
+            worker.tick()
+            state = json.loads(path.read_text())
+            self.assertNotIn("blocked", state)
+            self.assertNotIn("attempts", state)
+            self.assertEqual("queued", state["progress"]["stage"])
+            self.assertEqual(["queued"], [c.args[-1]["stage"] for c in board.call_args_list])
+            advance.reset_mock()
+            worker.save(Path(tmp, "active.json"), 78)
+            worker.tick()
+            self.assertEqual("working", json.loads(path.read_text())["progress"]["stage"])
+            self.assertEqual(78, advance.call_args.args[0]["number"])
+
+    def test_pending_publications_require_the_configured_github_account(self):
+        issue = {"number": 76, "title": "Publish status", "user": {"login": worker.OWNER},
+                 "body": "### Sprint start (Moscow)\n2020-01-01\n### User outcome\nX\n### Acceptance examples\nY"}
+        with patch.object(worker, "gh", return_value=json.dumps([[issue]])), \
+                patch.object(worker, "api", return_value={"login": "different-account"}), \
+                patch.object(worker, "prepare_status") as prepare:
+            with self.assertRaises(worker.OwnerAction):
+                worker.tick()
+            prepare.assert_not_called()
+
+    def test_legacy_blocker_uses_the_latest_worker_explanation(self):
+        older = {"user": {"login": worker.OWNER}, "body": "Sprint work blocked. Old reason", "html_url": "old"}
+        last = {**older, "body": "Sprint work blocked. Needs formula fix\n\nEdit the issue to retry.", "html_url": "latest"}
+        unrelated = {**last, "user": {"login": "someone-else"}}
+        gh = Mock(return_value=json.dumps([[older], [last, unrelated]]))
+        self.assertEqual(("Needs formula fix", "latest"), board_status.previous_blocker(gh, worker.REPO, worker.OWNER, 78))
+
+    def test_account_action_and_retryable_quota_have_distinct_status_and_keep_pr_links(self):
+        issue = {"number": 78, "title": "Publish status", "user": {"login": worker.OWNER},
+                 "body": "### Sprint start (Moscow)\n2020-01-01\n### User outcome\nX\n### Acceptance examples\nY"}
+        pr = "https://github.com/finance-lab-project/finance-lab/pull/121"
+        with tempfile.TemporaryDirectory() as tmp, patch.object(worker, "ROOT", Path(tmp)), \
+                patch.object(worker, "gh", return_value=json.dumps([[issue]])), \
+                patch.object(worker, "api", return_value={"login": worker.OWNER}), patch.object(worker, "protected"), \
+                patch.object(board_status, "publish_board"), patch.object(board_status, "publish_comment"):
+            for error, stage, column in [(worker.OwnerAction("Sign in"), "owner", "Blocked"),
+                                         (worker.Waiting("Allowance"), "waiting", "In Progress")]:
+                def wait(issue, state, persist, report):
+                    state["pr_url"] = pr
+                    raise error
+
+                with self.subTest(stage=stage), patch.object(worker, "advance", side_effect=wait), \
+                        self.assertRaises(worker.Waiting):
+                    worker.tick()
+                event = json.loads(Path(tmp, "78.json").read_text())["progress"]
+                self.assertEqual((stage, column, pr), (event["stage"], board_status.COLUMNS[event["stage"]], event["pr"]))
+
     def test_retry_board_without_duplicate_comment_or_change_of_timestamp(self):
         state = {}
         saved = Mock()
