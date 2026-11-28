@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS category_month (
     PRIMARY KEY (owner, period, category)
 ) STRICT;
 
+-- Actual-only rows retain their plan snapshot for balances, without defining a rate.
+CREATE TABLE IF NOT EXISTS category_month_inherited_plan (
+    owner TEXT NOT NULL,
+    period TEXT NOT NULL,
+    category TEXT NOT NULL,
+    PRIMARY KEY (owner, period, category),
+    FOREIGN KEY (owner, period, category) REFERENCES category_month(owner, period, category)
+        ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS month_actuals (
     owner TEXT NOT NULL,
     period TEXT NOT NULL,

@@ -3,6 +3,8 @@ WITH settings_categories AS (
            coalesce((SELECT h.plan FROM category_month h
                       WHERE h.owner = p.owner AND h.category = p.category
                         AND h.period >= p.since AND h.period <= :period
+                        AND NOT EXISTS (SELECT 1 FROM category_month_inherited_plan i WHERE i.owner = h.owner
+                                         AND i.category = h.category AND i.period = h.period)
                       ORDER BY h.period DESC LIMIT 1), p.plan) AS plan
       FROM planning_category p WHERE p.owner = :owner AND p.since = :since
 ), rows AS (

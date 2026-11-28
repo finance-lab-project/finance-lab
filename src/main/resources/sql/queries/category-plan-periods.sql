@@ -9,13 +9,17 @@ WITH first_settings AS (
         OR (f.start > (SELECT min(since) FROM planning_settings WHERE owner = :owner)
             AND NOT EXISTS (SELECT 1 FROM category_month h WHERE h.owner = :owner
                              AND h.category = f.category AND h.period < f.start))
+), monthly_rates AS (
+    SELECT m.category, m.period, m.plan FROM category_month m
+     WHERE m.owner = :owner AND m.period <= :last
+       AND NOT EXISTS (SELECT 1 FROM category_month_inherited_plan i WHERE i.owner = m.owner
+                        AND i.category = m.category AND i.period = m.period)
 ), rates AS (
-    SELECT category, period, plan FROM category_month WHERE owner = :owner AND period <= :last
+    SELECT category, period, plan FROM monthly_rates
     UNION ALL
     SELECT p.category, p.since, p.plan FROM planning_category p
      WHERE p.owner = :owner AND p.since <= :last
-       AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = p.owner
-                        AND m.category = p.category AND m.period = p.since)
+       AND NOT EXISTS (SELECT 1 FROM monthly_rates m WHERE m.category = p.category AND m.period = p.since)
 ), periods AS (
     SELECT r.*, i.start,
            row_number() OVER (PARTITION BY r.category ORDER BY r.period) AS ordinal,

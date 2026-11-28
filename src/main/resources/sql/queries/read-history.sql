@@ -1,11 +1,13 @@
 , recorded AS (
-    SELECT category, plan, actual FROM category_month WHERE owner = :owner AND period = :period
+    SELECT m.category, m.plan, m.actual, i.category IS NULL AS explicit_plan
+      FROM category_month m LEFT JOIN category_month_inherited_plan i USING (owner, period, category)
+     WHERE m.owner = :owner AND m.period = :period
 ), configured AS (
     SELECT category, name, addition_order FROM planning_category WHERE owner = :owner AND since = :since
 ), codes AS (
     SELECT category FROM configured UNION SELECT category FROM recorded
 )
-SELECT codes.category, coalesce(p.name, c.name) AS name, m.plan, m.actual, m.category IS NOT NULL AS recorded,
+SELECT codes.category, coalesce(p.name, c.name) AS name, m.plan, m.actual, m.category IS NOT NULL AS recorded, m.explicit_plan,
        coalesce(m.plan, (SELECT r.plan FROM periods r WHERE r.category = codes.category
                            AND (r.period <= :period OR (r.ordinal = 1 AND r.start IS NULL))
                            AND (r.until IS NULL OR r.until > :period)), 0) AS effective_plan

@@ -20,8 +20,9 @@ import org.springframework.web.server.ResponseStatusException;
 /** Reads and replaces one owner's committed monthly figures. */
 @Repository
 class MonthStore {
-    record HistoricalCategory(String code, String name, long plan, long actual, boolean recorded, long effectivePlan) {}
-    record HistoricalEdit(String code, long plan, long actual, boolean actualProvided) {}
+    record HistoricalCategory(String code, String name, long plan, long actual, boolean recorded,
+                              boolean explicitPlan, long effectivePlan) {}
+    record HistoricalEdit(String code, long plan, long actual, boolean actualProvided, boolean planProvided) {}
     record History(MonthBudget.Figures figures, long planRevision, List<HistoricalCategory> categories) {
         public String percent(long amount) {
             return figures.income() == 0 ? "—" : PlanCalculator.displayedPercent(amount, figures.income()) + " %";
@@ -232,7 +233,7 @@ class MonthStore {
                 .param("last", month.withMonth(12).toString())
                 .query((rs, index) -> new HistoricalCategory(rs.getString("category"), rs.getString("name"),
                         rs.getLong("plan"), rs.getLong("actual"), rs.getBoolean("recorded"),
-                        rs.getLong("effective_plan"))).list();
+                        rs.getBoolean("explicit_plan"), rs.getLong("effective_plan"))).list();
         return new History(figures(owner, month), terms == null ? 0 : terms.revision(), categories);
     }
 
@@ -281,7 +282,7 @@ class MonthStore {
         if (!month.isBefore(current) || !claim(owner, month, current, revision, saved.planRevision(), figures)) return false;
         for (var row : categories) {
             int initialRevision = row.actualProvided() ? 1 : 0;
-            saveCategory(owner, month, row.code(), row.plan(), row.actual(), true, initialRevision);
+            saveCategory(owner, month, row.code(), row.plan(), row.actual(), row.planProvided(), initialRevision);
         }
         BigInteger change = net(income, contributions).subtract(net(saved.figures().income(), saved.figures().contributions()));
         change = change.add(saved.categories().stream().map(row -> BigInteger.valueOf(row.actual()))
@@ -302,7 +303,19 @@ class MonthStore {
     }
 
     private void saveCategory(String owner, YearMonth month, String category, long plan, long actual,
-                              boolean history, int initialRevision) {
+                              boolean explicitPlan, int initialRevision) {
+        String period = month.toString();
+        if (explicitPlan) {
+            jdbc.sql("DELETE FROM category_month_inherited_plan WHERE owner = ? AND period = ? AND category = ?")
+                    .params(owner, period, category).update();
+        } else {
+            jdbc.sql("""
+                    INSERT INTO category_month_inherited_plan (owner, period, category)
+                    SELECT ?, ?, ? WHERE NOT EXISTS (
+                        SELECT 1 FROM category_month WHERE owner = ? AND period = ? AND category = ?
+                    )
+                    """).params(owner, period, category, owner, period, category).update();
+        }
         jdbc.sql("""
                 INSERT INTO category_month (owner, period, category, plan, actual, revision) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (owner, period, category) DO UPDATE
@@ -310,7 +323,7 @@ class MonthStore {
                        revision = CASE WHEN category_month.actual = excluded.actual
                                        THEN category_month.revision ELSE category_month.revision + 1 END,
                        actual = excluded.actual
-                """).params(owner, month.toString(), category, plan, actual, initialRevision, history).update();
+                """).params(owner, period, category, plan, actual, initialRevision, explicitPlan).update();
     }
 
     private void refreshPlan(String owner, YearMonth savedMonth, YearMonth current) {

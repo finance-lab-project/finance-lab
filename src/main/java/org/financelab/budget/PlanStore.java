@@ -141,6 +141,8 @@ class PlanStore {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """).params(owner, since, code, row.name().strip(), row.group(), i + 1, row.unit(), row.value(), rubles).update();
             if (recordMonth) {
+                jdbc.sql("DELETE FROM category_month_inherited_plan WHERE owner = ? AND period = ? AND category = ?")
+                        .params(owner, since, code).update();
                 jdbc.sql("""
                         INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
                         ON CONFLICT(owner, period, category) DO UPDATE SET plan = excluded.plan
