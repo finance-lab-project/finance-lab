@@ -64,6 +64,13 @@ test("partial paste preserves malformed grouping for validation", () => {
     assert.equal(input.selectionStart, 9);
 });
 
+test("formatted paste in the middle strips the pasted currency and keeps the caret after the inserted digits", () => {
+    const {input, edit} = editor("1234");
+    edit(1, 1, "30 000 ₽", "insertFromPaste");
+    assert.equal(input.value, "130\u00a0000\u00a0234\u00a0₽");
+    assert.equal(input.selectionStart, 7);
+});
+
 test("backspace can clear explicit zero, including from the end of the suffix", () => {
     const {input, edit} = editor();
     assert.equal(input.value, "");
@@ -85,6 +92,20 @@ test("money formatting retains fractional digits and invalid input for validatio
 test("backspace without beforeinput clears zero and resets the caret", () => {
     const {input, edit} = editor("0");
     edit(input.value.length, input.value.length, "", "deleteContentBackward", false);
+    assert.equal(input.value, "");
+    assert.equal(input.selectionStart, 0);
+});
+
+test("middle insertion without beforeinput regroups and keeps the caret after the inserted digit", () => {
+    const {input, edit} = editor("30000");
+    edit(2, 2, "1", "insertText", false);
+    assert.equal(input.value, "301\u00a0000\u00a0₽");
+    assert.equal(input.selectionStart, 3);
+});
+
+test("deleting the selected zero without beforeinput clears the field", () => {
+    const {input, edit} = editor("0");
+    edit(0, 1, "", "deleteContentBackward", false);
     assert.equal(input.value, "");
     assert.equal(input.selectionStart, 0);
 });

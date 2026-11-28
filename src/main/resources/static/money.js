@@ -53,8 +53,9 @@ document.addEventListener("input", event => {
         previous = {value: value + "₽", start: caret + 1, end: caret + 1};
     }
     if (previous?.value.endsWith(moneySuffix) && event.inputType !== "historyUndo" && event.inputType !== "historyRedo") {
-        if (event.inputType === "insertFromPaste"
-                && !moneyPattern.test(moneyNumber(value.slice(previous.start, caret)))) return;
+        const pasted = event.inputType === "insertFromPaste" ? value.slice(previous.start, caret) : null;
+        const pastedNumber = pasted === null ? null : moneyNumber(pasted);
+        if (pastedNumber !== null && !moneyPattern.test(pastedNumber)) return;
         const end = previous.value.length - moneySuffix.length;
         const collapsed = previous.start === previous.end;
         const backward = collapsed && event.inputType === "deleteContentBackward";
@@ -78,10 +79,23 @@ document.addEventListener("input", event => {
                 caret -= left.length;
             }
         }
+        if (pasted !== null) {
+            const start = caret - pasted.length;
+            value = value.slice(0, start) + pastedNumber + value.slice(caret);
+            caret = start + pastedNumber.length;
+        }
         // Native edits can split or leave behind a grouping separator.
         if ((previous.start !== 0 || previous.end < end) && /^[+−-]?[\d \u00a0\u202f]*([,.]\d*)?$/.test(value)) {
             caret = value.slice(0, caret).replace(moneySpaces, "").length;
             value = value.replace(moneySpaces, "");
+        }
+    } else if (!previous && value.endsWith(moneySuffix)
+            && /^(insertText|deleteContentBackward|deleteContentForward)$/.test(event.inputType)) {
+        // Some editors only report the resulting value, with the old grouping and suffix intact.
+        const number = value.slice(0, -moneySuffix.length);
+        if (/^[+−-]?[\d \u00a0\u202f]*([,.]\d*)?$/.test(number)) {
+            caret = number.slice(0, caret).replace(moneySpaces, "").length;
+            value = number.replace(moneySpaces, "");
         }
     }
     const formatted = formatMoney(value);
