@@ -12,6 +12,16 @@ class Waiting(Exception):
     """A later poll may retry without changing the issue."""
 
 
+class OwnerAction(Waiting):
+    """A maintainer must restore access or configuration before a retry can succeed."""
+
+    stage = "owner"
+
+
+class SignInRequired(OwnerAction):
+    stage = "sign-in"
+
+
 def binary():
     bundled = Path("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
     return str(bundled) if bundled.is_file() else shutil.which("codex") or "codex"
@@ -35,12 +45,17 @@ def check_limits(data):
         raise Waiting("Waiting for included allowance (5% reserve)")
 
 
-def preflight():
+def authenticated_cli():
     args = [binary(), "-c", 'forced_login_method="chatgpt"']
     login = subprocess.run(args + ["login", "status"], env=environment(), capture_output=True,
                            text=True, timeout=15)
     if login.returncode or "logged in using chatgpt" not in (login.stdout + login.stderr).lower():
-        raise Waiting("Codex requires Sign in with ChatGPT on this Mac")
+        raise SignInRequired("Codex requires Sign in with ChatGPT on this Mac")
+    return args
+
+
+def preflight():
+    args = authenticated_cli()
     with tempfile.TemporaryDirectory() as empty, subprocess.Popen(
             args + ["app-server", "--stdio"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, cwd=empty, env=environment()) as proc:
@@ -69,7 +84,7 @@ def preflight():
             proc.kill()
 
 
-def agent(workspace, prompt, schema, writable):
+def agent(workspace, prompt, schema, writable, on_ready=None):
     preflight()
     fields = {name: {"type": "string"} for name in schema}
     if not writable:
@@ -84,6 +99,8 @@ def agent(workspace, prompt, schema, writable):
                "-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"',
                "-s", "workspace-write" if writable else "read-only", "--skip-git-repo-check",
                "--ephemeral", "--output-schema", str(spec), "-o", str(output), "-"]
+        if on_ready:
+            on_ready()
         result = subprocess.run(cmd, input=prompt, cwd=workspace, env=environment(),
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 text=True, timeout=1800)

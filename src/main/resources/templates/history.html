@@ -56,6 +56,7 @@
             <p id="unsaved" class="notice" role="status" th:hidden="${errors.isEmpty() and conflict == null}">
                 Есть несохранённые изменения.
             </p>
+            <th:block th:replace="~{cash-correction :: field}"></th:block>
             <p id="request-error" class="notice error" role="alert" tabindex="-1" hidden></p>
             <div class="field-grid history-figures">
                 <section class="plan-row" aria-labelledby="history-income">
