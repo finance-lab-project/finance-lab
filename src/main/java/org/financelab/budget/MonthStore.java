@@ -29,16 +29,21 @@ class MonthStore {
     }
 
     record Cash(LocalDate date, long cardBalance, BigInteger opening, BigInteger balance) {}
-    private record Reference(LocalDate date, long cardBalance, BigInteger laterMovement) {}
+    private record Reference(LocalDate date, long cardBalance, BigInteger legacyLaterMovement) {}
 
+    @Transactional
     public void reconcile(String owner, LocalDate date, long cardBalance) {
+        // Older databases have only an aggregate for edits after the original reference.
+        jdbc.sql("""
+                INSERT INTO cash_movement (owner, period, effective_date, amount)
+                SELECT owner, substr(reference_date, 1, 7), date(reference_date, '+1 day'), later_movement
+                  FROM cash_reconciliation WHERE owner = ? AND later_movement <> '0'
+                """).param(owner).update();
         jdbc.sql("""
                 INSERT INTO cash_reconciliation (owner, reference_date, card_balance, later_movement)
                 VALUES (?, ?, ?, '0')
                 ON CONFLICT (owner) DO UPDATE SET reference_date = excluded.reference_date,
                     card_balance = excluded.card_balance, later_movement = '0'
-                WHERE cash_reconciliation.reference_date <> excluded.reference_date
-                   OR cash_reconciliation.card_balance <> excluded.card_balance
                 """).params(owner, date.toString(), cardBalance).update();
     }
 
@@ -49,10 +54,13 @@ class MonthStore {
         YearMonth referenceMonth = YearMonth.from(reference.date());
         if (month.isBefore(referenceMonth)) return null;
         BigInteger throughReferenceMonth = movement(owner, referenceMonth);
-        // Monthly totals include later edits. Only those posted after the reference
-        // within its own month need a separate adjustment to the opening cash.
+        BigInteger laterMovement = jdbc.sql("""
+                SELECT amount FROM cash_movement WHERE owner = ? AND period = ? AND effective_date > ?
+                """).params(owner, referenceMonth.toString(), reference.date().toString())
+                .query((rs, i) -> new BigInteger(rs.getString(1))).list().stream()
+                .reduce(BigInteger.ZERO, BigInteger::add);
         BigInteger opening = BigInteger.valueOf(reference.cardBalance())
-                .subtract(throughReferenceMonth).add(reference.laterMovement());
+                .subtract(throughReferenceMonth).add(laterMovement).add(reference.legacyLaterMovement());
         BigInteger throughMonth = month.equals(referenceMonth) ? throughReferenceMonth : movement(owner, month);
         return new Cash(reference.date(), reference.cardBalance(), opening, opening.add(throughMonth));
     }
@@ -78,19 +86,27 @@ class MonthStore {
     }
 
     private void trackMovement(String owner, YearMonth month, LocalDate correction, BigInteger change) {
-        if (correction == null && change.signum() == 0) return;
-        var reference = reference(owner).orElse(null);
         if (correction != null) {
+            var reference = reference(owner).orElse(null);
             if (reference == null || !month.equals(YearMonth.from(reference.date()))
                     || !correction.isBefore(reference.date())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Дата сверки изменилась.");
             }
-            return;
         }
-        if (reference != null && month.equals(YearMonth.from(reference.date()))) {
-            jdbc.sql("UPDATE cash_reconciliation SET later_movement = ? WHERE owner = ?")
-                    .params(reference.laterMovement().add(change).toString(), owner).update();
+        if (change.signum() == 0) return;
+
+        LocalDate effectiveDate = correction;
+        if (effectiveDate == null) {
+            LocalDate today = period.todayInMoscow();
+            effectiveDate = today;
+            // A save on the reference day follows the already recorded card snapshot.
+            if (month.equals(YearMonth.from(effectiveDate))
+                    && reference(owner).map(Reference::date).filter(today::equals).isPresent()) {
+                effectiveDate = effectiveDate.plusDays(1);
+            }
         }
+        jdbc.sql("INSERT INTO cash_movement (owner, period, effective_date, amount) VALUES (?, ?, ?, ?)")
+                .params(owner, month.toString(), effectiveDate.toString(), change.toString()).update();
     }
 
     private final PlanStore plans;

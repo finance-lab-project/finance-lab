@@ -88,3 +88,12 @@ CREATE TABLE IF NOT EXISTS cash_reconciliation (
     card_balance INTEGER NOT NULL,
     later_movement TEXT NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS cash_movement (
+    owner TEXT NOT NULL,
+    period TEXT NOT NULL,
+    effective_date TEXT NOT NULL,
+    amount TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS cash_movement_lookup ON cash_movement (owner, period, effective_date);

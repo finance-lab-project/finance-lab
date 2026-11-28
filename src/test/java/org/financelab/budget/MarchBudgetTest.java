@@ -125,6 +125,7 @@ class MarchBudgetTest {
         try (var restarted = startCashTest("2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) restarted).build();
             assertCash(reviewPage(mvc, MARCH), "155 000 ₽", "95 000 ₽");
+            assertThat(reviewPage(mvc, "/fire").expectFirst("#income-total").text()).isEqualTo("1 000 ₽");
             String history = "/history/2027-03";
             cashPost(mvc, reviewPage(mvc, history).expectFirst("#history-form"),
                     Map.of("amount-food", "65000", "correctionDate", "2027-03-10")).andExpect(status().isFound());
@@ -135,6 +136,34 @@ class MarchBudgetTest {
             cashPost(mvc, reviewPage(mvc, "/months/2027-04?edit=true").expectFirst("#month-form"),
                     Map.of("income", "2000")).andExpect(status().isFound());
             assertCash(reviewPage(mvc, "/months/2027-04"), "160 000 ₽", "97 000 ₽");
+        }
+    }
+
+    @Test
+    void backdatedReconciliationSeparatesAlreadyRecordedLaterSpending() throws Exception {
+        try (var app = startCashTest("2027-03")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    VALUES ('owner-a', '2027-03', 'food', 60000, 50000)
+                    """).update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            cashPost(mvc, reviewPage(mvc, EDIT).expectFirst("#month-form"), Map.of("amount-food", "55000"))
+                    .andExpect(status().isFound());
+            var form = reviewPage(mvc, MARCH).expectFirst("#cash-reconciliation-form");
+            var backdated = Map.of("referenceDate", "2027-03-15", "cardBalance", "100000");
+            cashPost(mvc, form, backdated).andExpect(status().isFound());
+            assertCash(reviewPage(mvc, MARCH), "150 000 ₽", "95 000 ₽");
+            cashPost(mvc, form, Map.of("referenceDate", "2027-03-31", "cardBalance", "95000"))
+                    .andExpect(status().isFound());
+            assertThat(reviewPage(mvc, MARCH).expectFirst("#cash-opening").text()).isEqualTo("150 000 ₽");
+            cashPost(mvc, form, backdated).andExpect(status().isFound());
+            assertCash(reviewPage(mvc, MARCH), "150 000 ₽", "95 000 ₽");
+            cashPost(mvc, form, Map.of("referenceDate", "2027-03-15", "cardBalance", "105000"))
+                    .andExpect(status().isFound());
+            Document updated = reviewPage(mvc, MARCH);
+            assertThat(updated.expectFirst("#cash-opening").text()).isEqualTo("155 000 ₽");
+            assertThat(updated.expectFirst("#cash-balance").text()).isEqualTo("100 000 ₽");
         }
     }
 
