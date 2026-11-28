@@ -35,7 +35,7 @@ class HistoryController {
     @GetMapping
     String select(@RequestParam(required = false) Integer year, @RequestParam(required = false) Integer month,
                   Principal owner, Model model, HttpServletResponse response) {
-        YearMonth latest = period.current().minusMonths(1);
+        YearMonth latest = period.currentInMoscow().minusMonths(1);
         if (year == null && month == null) return "redirect:/history/" + latest;
         if (year != null && month != null && year >= 1 && year <= latest.getYear() && month >= 1 && month <= 12) {
             YearMonth selected = YearMonth.of(year, month);
@@ -87,7 +87,7 @@ class HistoryController {
     }
 
     private void requirePast(YearMonth month) {
-        if (month.getYear() < 1 || !month.isBefore(period.current())) {
+        if (month.getYear() < 1 || !month.isBefore(period.currentInMoscow())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Выберите завершённый месяц.");
         }
     }
@@ -99,7 +99,7 @@ class HistoryController {
         model.mergeAttributes(Map.of("draft", original, "errors", Map.of()));
         model.addAttribute("history", saved);
         model.addAttribute("period", month);
-        model.addAttribute("current", period.current());
+        model.addAttribute("current", period.currentInMoscow());
         model.addAttribute("months", BudgetPeriod.MONTHS);
         return "history";
     }

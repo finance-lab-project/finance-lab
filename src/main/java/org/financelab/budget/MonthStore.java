@@ -227,7 +227,7 @@ class MonthStore {
 
     @Transactional
     public History readHistory(String owner, YearMonth month) {
-        YearMonth current = period.current();
+        YearMonth current = period.currentInMoscow();
         plans.refreshForYear(owner, current);
         var terms = plans.terms(owner, current);
         var categories = jdbc.sql(readHistorySql)
@@ -290,7 +290,7 @@ class MonthStore {
     @Transactional
     public boolean replaceHistory(String owner, YearMonth month, History saved, Long income, Long contributions,
                                   List<HistoricalEdit> categories, LocalDate correction) {
-        YearMonth current = period.current();
+        YearMonth current = period.currentInMoscow();
         long revision = saved.figures().revision();
         var figures = submittedFigures(income, contributions, revision);
         if (!month.isBefore(current) || !claim(owner, month, current, revision, saved.planRevision(), figures, revision + 1)) {

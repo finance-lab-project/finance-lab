@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
@@ -22,8 +23,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -614,42 +619,101 @@ class MarchBudgetTest {
     }
 
     @Test
-    void legacyDemoKeepsUnprovenZeroesMissingUntilConfirmedInHistory() throws Exception {
-        try (var app = startReportTest("fixture", "2027-04")) {
-            var jdbc = app.getBean(JdbcClient.class);
-            jdbc.sql("""
-                    WITH RECURSIVE months(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM months WHERE n < 11)
-                    INSERT INTO category_month (owner, period, category, plan, actual)
-                    SELECT 'owner-a', printf('2026-%02d', n), 'food', 24000, 24000 FROM months
-                    UNION ALL
-                    SELECT 'owner-a', printf('2026-%02d', n), 'housing', 12000, 12000 FROM months
-                    """).update();
-            jdbc.sql("""
-                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
-                        ('owner-a', '2026-11', 'travel', 8000, 0),
-                        ('owner-a', '2026-12', 'food', 22000, 25000),
-                        ('owner-a', '2026-12', 'housing', 12000, 24000),
-                        ('owner-a', '2027-01', 'housing', 13000, 12000),
-                        ('owner-a', '2027-01', 'food', 24000, 25000),
-                        ('owner-a', '2027-01', 'health', 3000, 1000),
-                        ('owner-a', '2027-01', 'leisure', 12000, 10000),
-                        ('owner-a', '2027-01', 'travel', 8000, 5000),
-                        ('owner-a', '2027-02', 'housing', 13000, 13000),
-                        ('owner-a', '2027-02', 'food', 24000, 23000),
-                        ('owner-a', '2027-02', 'health', 3000, 2000),
-                        ('owner-a', '2027-02', 'leisure', 12000, 14000),
-                        ('owner-a', '2027-02', 'travel', 8000, 6000),
-                        ('owner-a', '2027-03', 'housing', 13000, 13000),
-                        ('owner-a', '2027-03', 'food', 24000, 6000),
-                        ('owner-a', '2027-03', 'health', 3000, 0),
-                        ('owner-a', '2027-03', 'leisure', 12000, 1000),
-                        ('owner-a', '2027-03', 'travel', 8000, 0),
-                        ('owner-b', '2026-12', 'food', 22000, 24000),
-                        ('owner-b', '2026-12', 'housing', 12000, 24000),
-                        ('owner-b', '2027-03', 'health', 3000, 0),
-                        ('owner-b', '2027-03', 'travel', 8000, 0)
-                    """).update();
+    void staleMonthTabKeepsItsDraftAfterAnotherTabRecordsZero() throws Exception {
+        try (var app = startReportTest("fixture", "2027-03")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var first = reviewPage(mvc, EDIT).expectFirst("#month-form");
+            var second = reviewPage(mvc, EDIT).expectFirst("#month-form");
+            assertThat(second.expectFirst("#income").val()).isEmpty();
+            cashPost(mvc, first, Map.of("income", "0")).andExpect(status().isFound());
+
+            var response = cashPost(mvc, second, Map.of("contributions", "123"))
+                    .andExpect(status().isConflict()).andReturn().getResponse();
+            var conflict = Jsoup.parse(response.getContentAsString(StandardCharsets.UTF_8));
+            assertThat(conflict.expectFirst("#income").val()).isEmpty();
+            assertThat(conflict.expectFirst("#contributions").val()).isEqualTo("123");
+            assertThat(revision(conflict)).isNotEqualTo(second.expectFirst("input[name=revision]").val())
+                    .isEqualTo(revision(reviewPage(mvc, EDIT)));
         }
+    }
+
+    @Test
+    void historyAndReportUseTheMoscowMonthAtRollover() throws Exception {
+        // At 21:30 UTC on November 30, Moscow has already reached December 1.
+        var rollover = reportTest("fixture").initializers(context -> {
+            var web = (GenericWebApplicationContext) context;
+            web.registerBean("rolloverPeriod", BudgetPeriod.class, () -> new BudgetPeriod("2026-11") {
+                @Override
+                YearMonth currentInMoscow() {
+                    return YearMonth.from(todayInMoscow());
+                }
+
+                @Override
+                LocalDate todayInMoscow() {
+                    return LocalDate.of(2026, 12, 1);
+                }
+            }, definition -> definition.setPrimary(true));
+        });
+        try (var app = startReportTest(rollover, "2026-11")) {
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var selection = mvc.perform(get("/history").principal(() -> "owner-a"))
+                    .andExpect(status().isFound()).andReturn().getResponse();
+            assertThat(selection.getRedirectedUrl()).isEqualTo("/history/2026-11");
+            var form = reviewPage(mvc, "/history/2026-11").expectFirst("#history-form");
+            cashPost(mvc, form, Map.of("income", "30000")).andExpect(status().isFound());
+            var report = reviewPage(mvc, "/years/2026");
+            assertThat(report.expectFirst("#average-period").text()).isEqualTo("Декабрь 2025 — Ноябрь 2026");
+            assertThat(report.expectFirst("#average-income").text()).isEqualTo("30 000 ₽ 1 из 12 мес.");
+            mvc.perform(get("/history/2026-12").principal(() -> "owner-a")).andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void legacyDemoKeepsUnprovenZeroesMissingUntilConfirmedInHistory() throws Exception {
+        var source = new DriverManagerDataSource(reportDatabaseUrl());
+        var schema = new ClassPathResource("sql/init/schema.sql").getContentAsString(StandardCharsets.UTF_8);
+        // The original catalogue and actuals tables precede the recording table.
+        var legacySchema = schema.substring(0, schema.indexOf("CREATE TABLE IF NOT EXISTS month_figure_recording"));
+        new ResourceDatabasePopulator(new ByteArrayResource(legacySchema.getBytes(StandardCharsets.UTF_8)))
+                .execute(source);
+        var jdbc = JdbcClient.create(source);
+        jdbc.sql("""
+                INSERT INTO month_actuals (owner, period, income, contributions, revision) VALUES
+                    ('owner-a', '2027-02', 0, 0, 1),
+                    ('owner-a', '2027-03', 0, 0, 2)
+                """).update();
+        jdbc.sql("""
+                WITH RECURSIVE months(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM months WHERE n < 11)
+                INSERT INTO category_month (owner, period, category, plan, actual)
+                SELECT 'owner-a', printf('2026-%02d', n), 'food', 24000, 24000 FROM months
+                UNION ALL
+                SELECT 'owner-a', printf('2026-%02d', n), 'housing', 12000, 12000 FROM months
+                """).update();
+        jdbc.sql("""
+                INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                    ('owner-a', '2026-11', 'travel', 8000, 0),
+                    ('owner-a', '2026-12', 'food', 22000, 25000),
+                    ('owner-a', '2026-12', 'housing', 12000, 24000),
+                    ('owner-a', '2027-01', 'housing', 13000, 12000),
+                    ('owner-a', '2027-01', 'food', 24000, 25000),
+                    ('owner-a', '2027-01', 'health', 3000, 1000),
+                    ('owner-a', '2027-01', 'leisure', 12000, 10000),
+                    ('owner-a', '2027-01', 'travel', 8000, 5000),
+                    ('owner-a', '2027-02', 'housing', 13000, 13000),
+                    ('owner-a', '2027-02', 'food', 24000, 23000),
+                    ('owner-a', '2027-02', 'health', 3000, 2000),
+                    ('owner-a', '2027-02', 'leisure', 12000, 14000),
+                    ('owner-a', '2027-02', 'travel', 8000, 6000),
+                    ('owner-a', '2027-03', 'housing', 13000, 13000),
+                    ('owner-a', '2027-03', 'food', 24000, 6000),
+                    ('owner-a', '2027-03', 'health', 3000, 0),
+                    ('owner-a', '2027-03', 'leisure', 12000, 1000),
+                    ('owner-a', '2027-03', 'travel', 8000, 0),
+                    ('owner-b', '2026-12', 'food', 22000, 24000),
+                    ('owner-b', '2026-12', 'housing', 12000, 24000),
+                    ('owner-b', '2027-03', 'health', 3000, 0),
+                    ('owner-b', '2027-03', 'travel', 8000, 0)
+                """).update();
         try (var app = startReportTest("demo", "2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var report = reviewPage(mvc, "/years/2027");
@@ -658,15 +722,18 @@ class MarchBudgetTest {
             assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 500 ₽ 2 из 12 мес.");
             assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("5 500 ₽ 2 из 12 мес.");
             var form = reviewPage(mvc, "/history/2027-03").expectFirst("#history-form");
+            assertThat(form.expectFirst("#income").val()).isEmpty();
+            assertThat(form.expectFirst("#contributions").val()).isEmpty();
             assertThat(form.expectFirst("#amount-health").val()).isEmpty();
             assertThat(form.expectFirst("#amount-travel").val()).isEmpty();
-            cashPost(mvc, form, Map.of("amount-health", "0", "amount-travel", "0")).andExpect(status().isFound());
+            cashPost(mvc, form, Map.of("income", "0", "contributions", "0", "amount-health", "0", "amount-travel", "0"))
+                    .andExpect(status().isFound());
         }
         try (var app = startReportTest("demo", "2027-04")) {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             var report = reviewPage(mvc, "/years/2027");
             assertThat(report.select("#average-income, #average-contributions").eachText())
-                    .containsExactly("Нет данных 0 из 12 мес.", "Нет данных 0 из 12 мес.");
+                    .containsExactly("0 ₽ 1 из 12 мес.", "0 ₽ 1 из 12 мес.");
             assertThat(report.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 000 ₽ 3 из 12 мес.");
             assertThat(report.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("3 667 ₽ 3 из 12 мес.");
             var unseededReport = Jsoup.parse(mvc.perform(get("/years/2027").principal(() -> "owner-b"))
@@ -1256,12 +1323,23 @@ class MarchBudgetTest {
     }
 
     private ConfigurableApplicationContext startReportTest(String profile, String currentMonth) {
+        return startReportTest(reportTest(profile), currentMonth);
+    }
+
+    private ConfigurableApplicationContext startReportTest(SpringApplicationBuilder builder, String currentMonth) {
+        return builder.run("--budget.current-month=" + currentMonth,
+                "--spring.datasource.url=" + reportDatabaseUrl(),
+                "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
+                "--spring.main.banner-mode=off", "--logging.level.root=WARN");
+    }
+
+    private SpringApplicationBuilder reportTest(String profile) {
         return new SpringApplicationBuilder(FinanceLabApplication.class).profiles(profile)
-                .contextFactory(webType -> new GenericWebApplicationContext(new MockServletContext()))
-                .run("--budget.current-month=" + currentMonth,
-                        "--spring.datasource.url=jdbc:sqlite:" + directory.resolve("report.sqlite"),
-                        "--budget.owner-a-password=fixture-owner-a", "--budget.owner-b-password=fixture-owner-b",
-                        "--spring.main.banner-mode=off", "--logging.level.root=WARN");
+                .contextFactory(webType -> new GenericWebApplicationContext(new MockServletContext()));
+    }
+
+    private String reportDatabaseUrl() {
+        return "jdbc:sqlite:" + directory.resolve("report.sqlite");
     }
 
     private ConfigurableApplicationContext start() {
