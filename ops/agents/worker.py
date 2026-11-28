@@ -244,15 +244,15 @@ def advance(issue, state, persist, report):
         snapshot(checkout, work)
         spec = f"Issue #{number}: {issue['title']}\n{issue['body']}\n"
         if pr and not feedback:
-            report("review", "CI passed; independent review is running.",
-                   "The reviewer checks this revision.", pr["html_url"])
             changed = git(checkout, "diff", "--no-ext-diff", "--no-renames", "origin/main...HEAD")
             if len(changed) > 100000:
                 raise Blocked("Split this change into smaller issues for a complete review")
             review = agent(work, POLICY + "Independently review the following diff against every "
                            "acceptance example, including test coverage. Decide approve, changes or blocked. "
                            "Explain concrete evidence or necessary fixes.\n" + spec + "\nDIFF\n" + changed,
-                           ["decision", "summary"], False)
+                           ["decision", "summary"], False, on_ready=lambda: report(
+                               "review", "CI passed; independent review is running.",
+                               "The reviewer checks this revision.", pr["html_url"]))
             if review["decision"] == "blocked":
                 raise Blocked(review["summary"])
             state["review"] = {**review, "sha": sha}
@@ -263,7 +263,9 @@ def advance(issue, state, persist, report):
         result = agent(work, POLICY + "Implement this issue, including relevant regression tests. "
                        "Edit files in this directory. Return blocked for ambiguous requirements or changes "
                        "to the delivery system.\n" + spec + "\nFeedback:\n" + feedback,
-                       ["decision", "summary"], True)
+                       ["decision", "summary"], True, on_ready=lambda: report(
+                           "working", "The product worker is implementing the issue.",
+                           "The worker implements and tests the acceptance examples."))
         if result["decision"] == "blocked":
             raise Blocked(result["summary"])
         report("working", "The implementation is ready for publication.",

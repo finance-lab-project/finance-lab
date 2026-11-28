@@ -157,6 +157,38 @@ class BoardStatusTests(unittest.TestCase):
             self.assertEqual([], state["progress"]["delivered"])
             self.assertEqual("In Progress", board_status.COLUMNS[state["progress"]["stage"]])
 
+    def test_model_stage_changes_only_after_allowance_recovers(self):
+        issue = {"number": 80, "title": "Annual total", "body": "Sum the effective months"}
+        pr = {"number": 121, "state": "open", "html_url": "https://github.com/finance-lab-project/finance-lab/pull/121",
+              "head": {"sha": "abc", "repo": {"full_name": worker.REPO}}, "user": {"login": worker.OWNER}}
+
+        class ModelStarted(Exception):
+            pass
+
+        for pulls, expected in [([], "working"), ([pr], "review")]:
+            state = {"progress": {"stage": "waiting"}}
+            api_responses = [pulls, {"behind_by": 0}] if pulls else [pulls]
+
+            def report(stage, *details):
+                state["progress"] = {"stage": stage}
+
+            def start_model(*args, **kwargs):
+                self.assertEqual(expected, state["progress"]["stage"])
+                raise ModelStarted()
+
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as tmp, \
+                    patch.object(worker, "ROOT", Path(tmp)), patch.object(worker, "api", side_effect=api_responses * 2), \
+                    patch.object(worker, "gh"), \
+                    patch.object(worker, "git", side_effect=lambda repo, *args: "abc" if args[0] == "rev-parse" else ""), \
+                    patch.object(worker, "snapshot"), patch.object(worker, "ci", return_value=("passed", "")), \
+                    patch.object(subscription, "preflight", side_effect=[worker.Waiting("Allowance"), None]), \
+                    patch.object(subscription.subprocess, "run", side_effect=start_model):
+                with self.assertRaises(worker.Waiting):
+                    worker.advance(issue, state, lambda: None, report)
+                self.assertEqual("waiting", state["progress"]["stage"])
+                with self.assertRaises(ModelStarted):
+                    worker.advance(issue, state, lambda: None, report)
+
     def test_publish_board_selects_existing_blocked_option_on_project_eleven(self):
         gh = Mock(side_effect=[json.dumps({"id": "project-id"}), json.dumps({"fields": [
             {"id": "field-id", "name": "Status", "options": [

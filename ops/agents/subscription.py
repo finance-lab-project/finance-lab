@@ -84,7 +84,7 @@ def preflight():
             proc.kill()
 
 
-def agent(workspace, prompt, schema, writable):
+def agent(workspace, prompt, schema, writable, on_ready=None):
     preflight()
     fields = {name: {"type": "string"} for name in schema}
     if not writable:
@@ -99,6 +99,8 @@ def agent(workspace, prompt, schema, writable):
                "-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"',
                "-s", "workspace-write" if writable else "read-only", "--skip-git-repo-check",
                "--ephemeral", "--output-schema", str(spec), "-o", str(output), "-"]
+        if on_ready:
+            on_ready()
         result = subprocess.run(cmd, input=prompt, cwd=workspace, env=environment(),
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 text=True, timeout=1800)
