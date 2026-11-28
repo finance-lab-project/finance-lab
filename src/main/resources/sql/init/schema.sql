@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS investment_account (
     UNIQUE (owner, name)
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS savings_product (
+    account_id INTEGER PRIMARY KEY REFERENCES investment_account(id),
+    kind TEXT NOT NULL CHECK (kind IN ('DEPOSIT', 'SAVINGS'))
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS investment_month (
     account_id INTEGER NOT NULL REFERENCES investment_account(id),
     period TEXT NOT NULL,

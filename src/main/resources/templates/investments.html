@@ -52,6 +52,12 @@
         <section aria-label="Добавление счёта">
             <p th:if="${accountAdded}" class="notice" role="status">Счёт добавлен.</p>
             <form id="add-investment-account" th:action="@{/investments/{p}/accounts(p=${period})}" method="post">
+                <label class="setting-field">Тип счёта
+                    <select name="kind">
+                        <option th:each="kind : ${accountKinds}" th:value="${kind.name()}" th:text="${kind.label()}"
+                                th:selected="${kind == selectedKind}"></option>
+                    </select>
+                </label>
                 <div class="investment-add">
                     <label class="setting-field">Название счёта
                         <input name="name" type="text" autocomplete="off" required th:value="${accountName}"
@@ -63,7 +69,7 @@
                    th:text="${nameError}"></p>
             </form>
         </section>
-        <section aria-label="Инвестиционные счета">
+        <section aria-label="Инвестиции и сбережения">
             <p th:unless="${accounts.isEmpty()}" id="investment-income-help" class="hint investment-guidance">
                 Сложите зачисленные за месяц проценты, купоны и дивиденды. Реинвестированный купон
                 включайте в доход один раз. Исключите личные переводы и изменение цен.
@@ -77,10 +83,11 @@
                            incomeError=${editing ? errors.get('creditedIncome') : null}">
                 <fieldset class="plan-row">
                     <legend th:text="${account.name()}"></legend>
+                    <p class="hint" th:text="${account.kind().label()}"></p>
                     <p th:if="${figures == null}" class="hint">Нет записи за этот месяц.</p>
                     <p th:if="${savedAccount == account.id()}" class="notice" role="status">Данные сохранены.</p>
                     <div class="field-grid">
-                        <label>Стоимость на конец месяца, ₽
+                        <label><span th:text="${account.kind().name() == 'INVESTMENT' ? 'Стоимость на конец месяца, ₽' : 'Остаток на конец месяца, ₽'}"></span>
                             <input type="text" inputmode="decimal" autocomplete="off" name="closingValue" required
                                    th:value="${editing ? draft.get('closingValue') : (figures == null ? '' : @rubles.number(figures.closingValue()))}"
                                    th:attr="aria-invalid=${valueError != null},aria-describedby=${valueError != null ? 'value-error-' + account.id() : null}">
