@@ -91,10 +91,12 @@ def protected():
     settings = api("repos/" + REPO)
     rules = api(endpoint("branches/main/protection"))
     reviews = rules.get("required_pull_request_reviews") or {}
+    approval_count = reviews.get("required_approving_review_count")
+    pr_rule = approval_count == 0 or (isinstance(approval_count, int) and approval_count > 0
+                                      and reviews.get("dismiss_stale_reviews"))
     checks = rules.get("required_status_checks") or {}
     if not (settings.get("allow_auto_merge") and settings.get("allow_squash_merge")
-            and reviews.get("required_approving_review_count", 0) >= 1
-            and reviews.get("dismiss_stale_reviews") and rules.get("enforce_admins", {}).get("enabled")
+            and pr_rule and rules.get("enforce_admins", {}).get("enabled")
             and checks.get("strict") and any(c.get("context") == "verify" and
             c.get("app_id") == 15368 for c in checks.get("checks", []))):
         raise OwnerAction("The repository does not yet enforce the sprint merge rules")

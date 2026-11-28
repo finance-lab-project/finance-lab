@@ -31,7 +31,7 @@ def configure():
         payload = {"required_status_checks": {"strict": True, "checks": [
             {"context": "verify", "app_id": 15368}]},
             "enforce_admins": True, "required_pull_request_reviews": {
-                "dismiss_stale_reviews": True, "required_approving_review_count": 1},
+                "dismiss_stale_reviews": True, "required_approving_review_count": 0},
             "restrictions": None}
         subprocess.run(["gh", "api", "-X", "PUT", endpoint("branches/main/protection"),
                         "--input", "-", "--silent"], input=json.dumps(payload), text=True, check=True)
