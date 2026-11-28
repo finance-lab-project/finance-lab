@@ -1,11 +1,11 @@
-function comparisonValue(text) {
-    const value = text.trim().replace(/[  ]/g, " ").replace("−", "-").replace(",", ".");
+function comparisonValue(text, money = false) {
+    const value = (money ? moneyNumber(text) : text.trim()).replace(/[  ]/g, " ").replace("−", "-").replace(",", ".");
     return /^[+-]?(?:\d+|\d{1,3}(?: \d{3})+)(?:\.\d+)?$/.test(value)
         ? value.replaceAll(" ", "").replace(/\.0+$/, "") : text;
 }
 
 function wholeRubles(text) {
-    const value = comparisonValue(text);
+    const value = comparisonValue(text, true);
     if (value.trim() === "") return 0;
     return /^[+-]?\d+$/.test(value) ? Number(value) : NaN;
 }
@@ -27,11 +27,16 @@ function initMonthForm() {
     const fields = form.querySelectorAll("[data-saved]");
     const shares = form.querySelectorAll("[data-history-share]");
     let destination;
+    formatMoneyFields(form);
+
+    function fieldValue(field, value) {
+        return comparisonValue(value, field.matches(moneyFields));
+    }
 
     function markChanges() {
         let dirty = false;
         for (const field of fields) {
-            const changed = comparisonValue(field.value) !== comparisonValue(field.dataset.saved);
+            const changed = fieldValue(field, field.value) !== fieldValue(field, field.dataset.saved);
             field.classList.toggle("modified", changed);
             if (changed) dirty = true;
         }
@@ -59,8 +64,8 @@ function initMonthForm() {
             if (percent.disabled) return;
             const request = ++version;
             clearTimeout(timer);
-            if (comparisonValue(input.value) === comparisonValue(input.dataset.saved)) {
-                other.value = other.dataset.saved;
+            if (fieldValue(input, input.value) === fieldValue(input, input.dataset.saved)) {
+                other.value = input === percent ? formatMoney(other.dataset.saved) : other.dataset.saved;
                 unit.value = "amount";
                 return;
             }
@@ -74,7 +79,7 @@ function initMonthForm() {
                     if (response.redirected || !response.ok) return;
                     const value = await response.text();
                     if (version === request && main.isConnected) {
-                        other.value = value;
+                        other.value = input === percent ? formatMoney(value) : value;
                         markChanges();
                     }
                 } catch {

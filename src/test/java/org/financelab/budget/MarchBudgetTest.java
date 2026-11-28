@@ -313,6 +313,34 @@ class MarchBudgetTest {
     }
 
     @Test
+    void formattedMoneyRoundTripsAndHistoryDistinguishesBlankFromExplicitZero() throws Exception {
+        try (var app = start()) {
+            var owner = signedIn(app, "owner-a");
+            Document edit = owner.get(EDIT).html();
+            assertThat(edit.expectFirst("#income[data-money]").attr("inputmode")).isEqualTo("decimal");
+            assertThat(edit.select("#percent-food[data-money]")).isEmpty();
+
+            var rejected = owner.save(edit, Map.of("income", "30\u00a0000,01\u00a0₽", "contributions", ""));
+            assertThat(rejected.status()).isEqualTo(422);
+            assertThat(rejected.html().expectFirst("#income").val()).isEqualTo("30\u00a0000,01\u00a0₽");
+            assertThat(rejected.html().expectFirst("#contributions").val()).isEmpty();
+            assertThat(owner.save(rejected.html(), Map.of("income", "30\u00a0000\u00a0₽",
+                    "contributions", "0\u00a0₽")).status()).isEqualTo(302);
+            assertThat(owner.get(MARCH).html().expectFirst("#actual-income").text()).isEqualTo("30 000 ₽");
+
+            String past = "/history/2026-11";
+            Document history = owner.get(past).html();
+            var health = history.expectFirst("#amount-health[data-money]");
+            assertThat(health.attr("placeholder")).isEqualTo("0");
+            assertThat(health.val()).isEmpty();
+            assertThat(owner.saveHistory(history, Map.of("amount-health", "0\u00a0₽")).status()).isEqualTo(302);
+            Document saved = owner.get(past).html();
+            assertThat(saved.expectFirst("#amount-health").val()).isEqualTo("0");
+            assertThat(saved.expectFirst("#amount-leisure").val()).isEmpty();
+        }
+    }
+
+    @Test
     void aFailedCategoryWriteRollsBackTheWholeMonth() throws Exception {
         try (var app = start()) {
             var month = java.time.YearMonth.of(2027, 3);

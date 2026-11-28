@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Настройки плана · Finance Lab</title>
     <link rel="stylesheet" th:href="@{/budget.css}">
+    <script defer th:src="@{/money.js}"></script>
     <script defer th:src="@{/settings.js}"></script>
 </head>
 <body>
@@ -39,14 +40,14 @@
             <section aria-labelledby="income-heading">
                 <h2 id="income-heading">Доход для плана</h2>
                 <label class="setting-field">Подготовленный доход за месяц, ₽
-                    <input id="income" type="text" inputmode="decimal" required autocomplete="off">
+                    <input data-money id="income" type="text" inputmode="decimal" required autocomplete="off">
                 </label>
             </section>
             <section aria-labelledby="investment-heading">
                 <h2 id="investment-heading">Инвестиции</h2>
                 <div class="field-grid">
                     <label>Цель, % от дохода<input id="target-percent" type="text" inputmode="decimal" autocomplete="off"></label>
-                    <label>Цель, ₽<input id="target-amount" type="text" inputmode="decimal" autocomplete="off"></label>
+                    <label>Цель, ₽<input data-money id="target-amount" type="text" inputmode="decimal" autocomplete="off"></label>
                 </div>
             </section>
             <section aria-labelledby="categories-heading">
@@ -75,10 +76,10 @@
                         <option value="essential">Необходимые расходы</option>
                         <option value="discretionary">Свободные расходы</option>
                     </select></label>
-                    <label>План на месяц, ₽<input data-field="amount" type="text" inputmode="decimal"></label>
+                    <label>План на месяц, ₽<input data-money data-field="amount" type="text" inputmode="decimal"></label>
                     <label>От всего дохода, %<input data-field="incomePercent" type="text" inputmode="decimal"></label>
                     <label data-group="essential">Расходы за прошлый год, ₽
-                        <input data-field="annual" type="text" inputmode="decimal" placeholder="Необязательно">
+                        <input data-money data-field="annual" type="text" inputmode="decimal" placeholder="Необязательно">
                     </label>
                     <label data-group="discretionary">Доля свободного бюджета, %
                         <input data-field="poolPercent" type="text" inputmode="decimal">
