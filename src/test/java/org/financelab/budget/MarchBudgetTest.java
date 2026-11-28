@@ -616,23 +616,38 @@ class MarchBudgetTest {
     @Test
     void existingDemoRestoresKnownZeroesAndKeepsUnrelatedLegacyDefaultsMissing() throws Exception {
         try (var app = startReportTest("fixture", "2027-04")) {
-            app.getBean(JdbcClient.class).sql("""
-                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
-                        ('owner-b', '2026-12', 'food', 22000, 0),
-                        ('owner-b', '2026-12', 'housing', 12000, 0),
-                        ('owner-b', '2027-03', 'health', 3000, 0),
-                        ('owner-b', '2027-03', 'travel', 8000, 0)
-                    """).update();
-        }
-        try (var app = startReportTest("demo", "2027-04")) {
             var jdbc = app.getBean(JdbcClient.class);
             jdbc.sql("""
-                    UPDATE category_month SET revision = 0 WHERE owner = 'owner-a'
-                     AND period = '2027-03' AND category IN ('health', 'travel')
+                    WITH RECURSIVE months(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM months WHERE n < 11)
+                    INSERT INTO category_month (owner, period, category, plan, actual)
+                    SELECT 'owner-a', printf('2026-%02d', n), 'food', 24000, 24000 FROM months
+                    UNION ALL
+                    SELECT 'owner-a', printf('2026-%02d', n), 'housing', 12000, 12000 FROM months
                     """).update();
             jdbc.sql("""
-                    INSERT INTO category_month (owner, period, category, plan, actual)
-                    VALUES ('owner-a', '2026-11', 'travel', 8000, 0)
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2026-11', 'travel', 8000, 0),
+                        ('owner-a', '2026-12', 'food', 22000, 25000),
+                        ('owner-a', '2026-12', 'housing', 12000, 24000),
+                        ('owner-a', '2027-01', 'housing', 13000, 12000),
+                        ('owner-a', '2027-01', 'food', 24000, 25000),
+                        ('owner-a', '2027-01', 'health', 3000, 1000),
+                        ('owner-a', '2027-01', 'leisure', 12000, 10000),
+                        ('owner-a', '2027-01', 'travel', 8000, 5000),
+                        ('owner-a', '2027-02', 'housing', 13000, 13000),
+                        ('owner-a', '2027-02', 'food', 24000, 23000),
+                        ('owner-a', '2027-02', 'health', 3000, 2000),
+                        ('owner-a', '2027-02', 'leisure', 12000, 14000),
+                        ('owner-a', '2027-02', 'travel', 8000, 6000),
+                        ('owner-a', '2027-03', 'housing', 13000, 13000),
+                        ('owner-a', '2027-03', 'food', 24000, 6000),
+                        ('owner-a', '2027-03', 'health', 3000, 0),
+                        ('owner-a', '2027-03', 'leisure', 12000, 1000),
+                        ('owner-a', '2027-03', 'travel', 8000, 0),
+                        ('owner-b', '2026-12', 'food', 22000, 24000),
+                        ('owner-b', '2026-12', 'housing', 12000, 24000),
+                        ('owner-b', '2027-03', 'health', 3000, 0),
+                        ('owner-b', '2027-03', 'travel', 8000, 0)
                     """).update();
         }
         try (var app = startReportTest("demo", "2027-04")) {
