@@ -66,6 +66,45 @@ class WorkbookAcceptanceMapTest {
     }
 
     @Test
+    void annualRateExamplePreservesTheApprovedAllocationAndExplicitZero() throws IOException {
+        assertExampleContains("Annual spending/income · annual rate",
+                "366 RUB/year", "101 RUB monthly planning income", "50% investment target",
+                "monthly essential plan is 31 RUB", "investments round to 51 RUB",
+                "19 RUB splits into 11 RUB and 8 RUB at 60% and 40%",
+                "historical actuals remain 366 RUB", "draft retains the 366 RUB annual source amount",
+                "explicitly saved 0 RUB expense and eleven unentered months",
+                "replace a 1,000 RUB manual baseline with 0",
+                "retains its 1,500 RUB baseline");
+    }
+
+    @Test
+    void monthlyPlanExampleDocumentsTheSettingsFallback() throws IOException {
+        assertExampleContains("Annual spending/income · monthly actuals and plan",
+                "recorded monthly category plan",
+                "If the monthly category plan is unrecorded, use the applicable settings plan.");
+    }
+
+    @Test
+    void riskExampleDocumentsInputsAndExpectedCoverageAtTheFreshnessBoundary() throws IOException {
+        assertExampleContains("Portfolio risk map · covered weights and look-through",
+                "On 2026-11-28", "7 calendar days inclusive", "100 RUB dated 2026-11-21",
+                "B has no quote", "200 RUB dated 2026-11-20",
+                "Covered value is the sum of fresh holding values",
+                "1 fresh, 1 missing and 1 stale", "60 RUB (60%)",
+                "covered value stays 100 RUB and all 100 RUB is unclassified",
+                "Reconcile the exact workbook cutoff privately");
+    }
+
+    private void assertExampleContains(String metric, String... expected) throws IOException {
+        String row = Files.readAllLines(MAP).stream()
+                .filter(line -> line.startsWith("| " + metric))
+                .findFirst().orElseThrow(() -> new AssertionError("Missing example: " + metric));
+        for (String fragment : expected) {
+            assertTrue(row.contains(fragment), () -> metric + " should include: " + fragment);
+        }
+    }
+
+    @Test
     void repositoryEvidenceLinksResolve() throws IOException {
         for (String line : Files.readAllLines(MAP)) {
             if (!line.startsWith("[") || !line.contains("]: ")) continue;
