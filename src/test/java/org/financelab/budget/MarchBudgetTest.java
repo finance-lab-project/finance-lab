@@ -268,12 +268,29 @@ class MarchBudgetTest {
                     .isEqualTo("Инвестиции");
             assertThat(desktop.get("/investments?year=2027&month=2").status()).isEqualTo(302);
 
-            for (String name : List.of("Учебный вклад", "Учебный брокерский счёт")) {
-                var addAccount = desktop.get(february).html().expectFirst("#add-investment-account");
-                assertThat(desktop.postForm(addAccount, Map.of("name", name)).status()).isEqualTo(302);
-            }
+            var addAccount = desktop.get(february).html().expectFirst("#add-investment-account");
+            assertThat(addAccount.select("select[name=kind] option").eachText())
+                    .containsExactly("Инвестиционный счёт", "Вклад", "Накопительный счёт");
+            assertThat(desktop.postForm(addAccount, Map.of("name", "Учебный вклад", "kind", "DEPOSIT")).status())
+                    .isEqualTo(302);
+            assertThat(desktop.postForm(addAccount, Map.of("name", "Учебные сбережения", "kind", "SAVINGS")).status())
+                    .isEqualTo(302);
+            assertThat(desktop.postForm(addAccount, Map.of("name", "Учебный брокерский счёт")).status())
+                    .isEqualTo(302);
+            var duplicate = desktop.postForm(addAccount, Map.of("name", "Учебный вклад", "kind", "SAVINGS"));
+            assertThat(duplicate.status()).isEqualTo(422);
+            assertThat(duplicate.html().expectFirst("select[name=kind] option[selected]").val()).isEqualTo("SAVINGS");
+            assertThat(desktop.postForm(addAccount, Map.of("name", "Недопустимый тип", "kind", "OTHER")).status())
+                    .isEqualTo(400);
+
             var accounts = desktop.get(february).html().select(".investment-account");
-            assertThat(accounts.select("legend").eachText()).containsExactly("Учебный вклад", "Учебный брокерский счёт");
+            assertThat(accounts.select("legend").eachText())
+                    .containsExactly("Учебный вклад", "Учебные сбережения", "Учебный брокерский счёт");
+            assertThat(accounts.getFirst().text()).contains("Вклад", "Остаток на конец месяца");
+            assertThat(accounts.get(1).text()).contains("Накопительный счёт", "Остаток на конец месяца");
+            assertThat(accounts.getLast().text()).contains("Инвестиционный счёт", "Стоимость на конец месяца");
+            assertThat(desktop.postForm(accounts.get(1), Map.of("closingValue", "20000", "creditedIncome", "200"))
+                    .status()).isEqualTo(302);
             assertInvestmentFigures(accounts.getFirst(), "", "");
             assertThat(accounts.getFirst().text()).contains("Нет записи за этот месяц.");
             var coupon = Map.of("closingValue", "101 500", "creditedIncome", "1500");
@@ -305,12 +322,15 @@ class MarchBudgetTest {
                     .isEqualTo(404);
             assertInvestmentFigures(desktop.get(february).html().expectFirst(".investment-account"), "102 000", "1 700");
             assertThat(app.getBean(JdbcClient.class).sql("SELECT count(*) FROM investment_month")
-                    .query(Long.class).single()).isEqualTo(2);
+                    .query(Long.class).single()).isEqualTo(3);
         }
         try (var restarted = start()) {
             var owner = signedIn(restarted, "owner-a");
             var accounts = owner.get(february).html().select(".investment-account");
             assertInvestmentFigures(accounts.getFirst(), "102 000", "1 700");
+            assertThat(accounts.getFirst().text()).contains("Вклад");
+            assertThat(accounts.get(1).text()).contains("Накопительный счёт");
+            assertInvestmentFigures(accounts.get(1), "20 000", "200");
             assertInvestmentFigures(accounts.getLast(), "40 000", "0");
             assertInvestmentFigures(owner.get(march).html().expectFirst(".investment-account"), "", "");
             Document budget = owner.get(EDIT).html();
