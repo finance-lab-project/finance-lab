@@ -5,11 +5,10 @@ import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Map;
 
-record MonthActuals(long income, long contributions, Map<String, Long> spending) {
+record MonthActuals(Long income, Long contributions, Map<String, Long> spending) {
     static Map<String, String> savedFields(MonthBudget month) {
         Map<String, String> fields = new HashMap<>();
-        fields.put("income", Rubles.number(month.figures().income()));
-        fields.put("contributions", Rubles.number(month.figures().contributions()));
+        addFigureFields(fields, month.figures());
         for (var row : month.categories()) {
             fields.put("amount-" + row.code(), row.actualRecorded() ? Rubles.number(row.actual()) : "");
             fields.put("percent-" + row.code(), row.actualRecorded() ? month.percent(row.actual()) : "");
@@ -20,8 +19,8 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
     // Only the last edited member of a linked pair is authoritative. A displayed,
     // rounded percentage must never change a ruble amount on an unrelated edit.
     static MonthActuals parse(MonthBudget month, Map<String, String> draft, Map<String, String> errors) {
-        long income = amount("income", draft, errors);
-        long contributions = amount("contributions", draft, errors);
+        Long income = figure("income", month.figures().incomeRecorded(), draft, errors);
+        Long contributions = figure("contributions", month.figures().contributionsRecorded(), draft, errors);
         Map<String, Long> spending = new HashMap<>();
         for (var row : month.categories()) {
             String amountKey = "amount-" + row.code();
@@ -44,6 +43,16 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
             }
         }
         return new MonthActuals(income, contributions, spending);
+    }
+
+    static void addFigureFields(Map<String, String> fields, MonthBudget.Figures figures) {
+        fields.put("income", figures.incomeRecorded() ? Rubles.number(figures.income()) : "");
+        fields.put("contributions", figures.contributionsRecorded() ? Rubles.number(figures.contributions()) : "");
+    }
+
+    static Long figure(String key, boolean recorded, Map<String, String> draft, Map<String, String> errors) {
+        if (!recorded && draft.getOrDefault(key, "").isBlank()) return null;
+        return amount(key, draft, errors);
     }
 
     static long amount(String key, Map<String, String> draft, Map<String, String> errors) {

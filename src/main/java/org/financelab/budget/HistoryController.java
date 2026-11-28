@@ -62,8 +62,8 @@ class HistoryController {
         var draft = new HashMap<>(fields);
         var errors = new HashMap<String, String>();
         if (revision == saved.figures().revision() && planRevision == saved.planRevision()) {
-            long income = MonthActuals.amount("income", draft, errors);
-            long contributions = MonthActuals.amount("contributions", draft, errors);
+            Long income = MonthActuals.figure("income", saved.figures().incomeRecorded(), draft, errors);
+            Long contributions = MonthActuals.figure("contributions", saved.figures().contributionsRecorded(), draft, errors);
             List<HistoricalEdit> categories = parseCategories(saved, draft, errors);
             if (!errors.isEmpty()) {
                 response.setStatus(HttpStatus.UNPROCESSABLE_CONTENT.value());
@@ -104,8 +104,7 @@ class HistoryController {
 
     private static Map<String, String> savedFields(History saved) {
         Map<String, String> fields = new HashMap<>();
-        fields.put("income", Rubles.number(saved.figures().income()));
-        fields.put("contributions", Rubles.number(saved.figures().contributions()));
+        MonthActuals.addFigureFields(fields, saved.figures());
         for (var row : saved.categories()) {
             fields.put("plan-" + row.code(), row.recorded() ? Rubles.number(row.plan()) : "");
             fields.put("amount-" + row.code(), row.actualRecorded() ? Rubles.number(row.actual()) : "");

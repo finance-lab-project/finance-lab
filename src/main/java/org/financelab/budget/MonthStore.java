@@ -118,10 +118,12 @@ class MonthStore {
         var contributionsAverage = YearReport.Average.EMPTY;
         var spendingAverage = YearReport.Average.EMPTY;
         for (YearMonth month = averageStart; month.isBefore(cutoff); month = month.plusMonths(1)) {
-            var figures = savedFigures(owner, month).filter(MonthStore::hasRecordedFigures);
-            if (figures.isPresent()) {
-                incomeAverage = incomeAverage.withMonth(BigInteger.valueOf(figures.get().income()));
-                contributionsAverage = contributionsAverage.withMonth(BigInteger.valueOf(figures.get().contributions()));
+            var figures = figures(owner, month);
+            if (figures.incomeRecorded()) {
+                incomeAverage = incomeAverage.withMonth(BigInteger.valueOf(figures.income()));
+            }
+            if (figures.contributionsRecorded()) {
+                contributionsAverage = contributionsAverage.withMonth(BigInteger.valueOf(figures.contributions()));
             }
             var spending = spendingByMonth.get(month);
             if (spending != null) spendingAverage = spendingAverage.withMonth(spending);
@@ -145,31 +147,34 @@ class MonthStore {
     }
 
     private MonthBudget.Figures figures(String owner, YearMonth month) {
-        return savedFigures(owner, month).orElse(new MonthBudget.Figures(0, 0, 0));
+        return savedFigures(owner, month).orElse(new MonthBudget.Figures(0, 0, 0, false, false));
     }
 
     Optional<MonthBudget.Figures> savedFigures(String owner, YearMonth month) {
-        return jdbc.sql("SELECT income, contributions, revision FROM month_actuals WHERE owner = ? AND period = ?")
-                .params(owner, month.toString())
-                .query((rs, i) -> new MonthBudget.Figures(rs.getLong(1), rs.getLong(2), rs.getLong(3)))
+        // A legacy nonzero value proves entry. The monthly revision only proves a save occurred.
+        return jdbc.sql("""
+                SELECT m.income, m.contributions, m.revision,
+                       (m.income <> 0 OR coalesce(r.income_recorded, 0)) AS income_recorded,
+                       (m.contributions <> 0 OR coalesce(r.contributions_recorded, 0)) AS contributions_recorded
+                  FROM month_actuals m LEFT JOIN month_figure_recording r USING (owner, period)
+                 WHERE m.owner = ? AND m.period = ?
+                """).params(owner, month.toString())
+                .query((rs, i) -> new MonthBudget.Figures(rs.getLong(1), rs.getLong(2), rs.getLong(3),
+                        rs.getBoolean(4), rs.getBoolean(5)))
                 .optional();
-    }
-
-    private static boolean hasRecordedFigures(MonthBudget.Figures figures) {
-        return figures.revision() > 0 || figures.income() != 0 || figures.contributions() != 0;
     }
 
     @Transactional
     public boolean replace(String owner, YearMonth month, MonthBudget saved, long revision, MonthActuals actuals) {
-        boolean changed = !hasRecordedFigures(saved.figures())
-                || actuals.income() != saved.figures().income()
-                || actuals.contributions() != saved.figures().contributions()
+        var figures = submittedFigures(actuals.income(), actuals.contributions(), revision);
+        boolean changed = !figures.equals(saved.figures())
                 || saved.categories().stream().anyMatch(row -> {
                     Long actual = actuals.spending().get(row.code());
                     return actual != null && (!row.actualRecorded() || row.actual() != actual);
                 });
-        var figures = new MonthBudget.Figures(actuals.income(), actuals.contributions(), changed ? revision + 1 : revision);
-        if (!claim(owner, month, month, revision, saved.planRevision(), figures)) return false;
+        if (!claim(owner, month, month, revision, saved.planRevision(), figures, changed ? revision + 1 : revision)) {
+            return false;
+        }
 
         for (var row : saved.categories()) {
             Long actual = actuals.spending().get(row.code());
@@ -181,12 +186,14 @@ class MonthStore {
     }
 
     @Transactional
-    public boolean replaceHistory(String owner, YearMonth month, History saved, long income, long contributions,
+    public boolean replaceHistory(String owner, YearMonth month, History saved, Long income, Long contributions,
                                   List<HistoricalEdit> categories) {
         YearMonth current = period.current();
         long revision = saved.figures().revision();
-        var figures = new MonthBudget.Figures(income, contributions, revision + 1);
-        if (!month.isBefore(current) || !claim(owner, month, current, revision, saved.planRevision(), figures)) return false;
+        var figures = submittedFigures(income, contributions, revision);
+        if (!month.isBefore(current) || !claim(owner, month, current, revision, saved.planRevision(), figures, revision + 1)) {
+            return false;
+        }
         for (var row : categories) {
             int initialRevision = row.actualProvided() ? 1 : 0;
             saveCategory(owner, month, row.code(), row.plan(), row.actual(), true, initialRevision);
@@ -195,12 +202,25 @@ class MonthStore {
         return true;
     }
 
+    private static MonthBudget.Figures submittedFigures(Long income, Long contributions, long revision) {
+        return new MonthBudget.Figures(income == null ? 0 : income, contributions == null ? 0 : contributions,
+                revision, income != null, contributions != null);
+    }
+
     private boolean claim(String owner, YearMonth month, YearMonth settingsMonth, long revision, long planRevision,
-                          MonthBudget.Figures figures) {
-        return jdbc.sql(replaceMonthSql).param("owner", owner).param("period", month.toString())
+                          MonthBudget.Figures figures, long nextRevision) {
+        int claimed = jdbc.sql(replaceMonthSql).param("owner", owner).param("period", month.toString())
                 .param("income", figures.income()).param("contributions", figures.contributions())
-                .param("revision", revision).param("nextRevision", figures.revision())
-                .param("settingsPeriod", settingsMonth.toString()).param("planRevision", planRevision).update() == 1;
+                .param("revision", revision).param("nextRevision", nextRevision)
+                .param("settingsPeriod", settingsMonth.toString()).param("planRevision", planRevision).update();
+        if (claimed != 1) return false;
+        jdbc.sql("""
+                INSERT INTO month_figure_recording (owner, period, income_recorded, contributions_recorded)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (owner, period) DO UPDATE SET income_recorded = excluded.income_recorded,
+                    contributions_recorded = excluded.contributions_recorded
+                """).params(owner, month.toString(), figures.incomeRecorded(), figures.contributionsRecorded()).update();
+        return true;
     }
 
     private void saveCategory(String owner, YearMonth month, String category, long plan, long actual,

@@ -21,8 +21,10 @@ WITH RECURSIVE
             ('2027-01', 'leisure', 12000, 10000), ('2027-02', 'leisure', 12000, 14000), ('2027-03', 'leisure', 12000,  1000),
             ('2027-01', 'travel',   8000,  5000), ('2027-02', 'travel',   8000,  6000), ('2027-03', 'travel',   8000,     0)
     )
-INSERT INTO category_month (owner, period, category, plan, actual)
-SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual
+-- The fixture supplies actuals for every row, including the explicit zeroes.
+INSERT INTO category_month (owner, period, category, plan, actual, revision)
+SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual,
+       CASE WHEN fixture.actual = 0 THEN 1 ELSE 0 END
 FROM fixture CROSS JOIN owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
 

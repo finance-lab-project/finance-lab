@@ -14,7 +14,8 @@ import org.jspecify.annotations.Nullable;
  * @param categories saved categories in display order
  */
 public record MonthBudget(@Nullable Terms terms, Figures figures, List<Category> categories) {
-    public record Figures(long income, long contributions, long revision) {}
+    public record Figures(long income, long contributions, long revision,
+                          boolean incomeRecorded, boolean contributionsRecorded) {}
 
     /**
      * Takes a snapshot so later edits to the source list cannot change the totals.

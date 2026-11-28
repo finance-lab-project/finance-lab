@@ -395,6 +395,11 @@ class MarchBudgetTest {
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
             mvc.perform(get("/years").param("year", "2027")).andExpect(status().isFound());
             mvc.perform(get("/years/0").principal(() -> "owner-a")).andExpect(status().isBadRequest());
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual) VALUES
+                        ('owner-a', '2027-04', 'health', 0, 0),
+                        ('owner-a', '2027-04', 'travel', 0, 0)
+                    """).update();
             Document previous = reviewPage(mvc, "/years/2027");
             assertThat(previous.expectFirst("#average-period").text()).isEqualTo("Январь 2027 — Декабрь 2027");
             assertThat(previous.expectFirst("#year-spending").text()).isEqualTo("131 000 ₽");
@@ -403,6 +408,9 @@ class MarchBudgetTest {
             assertThat(previous.expectFirst("#buffer-cutoff").text()).contains("1 января 2028 года");
             assertThat(previous.expectFirst("#year-buffer").text()).isEqualTo("35 000 ₽");
             assertThat(previous.expectFirst("#row-food .buffer").text()).isEqualTo("16 000 ₽");
+
+            assertThat(previous.expectFirst("#row-health [data-label=Среднее]").text()).isEqualTo("1 000 ₽ 3 из 12 мес.");
+            assertThat(previous.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("3 667 ₽ 3 из 12 мес.");
 
             Document january = reviewPage(mvc, "/years/2028");
             assertThat(january.expectFirst("#average-period").text()).isEqualTo(previous.expectFirst("#average-period").text());
@@ -423,7 +431,7 @@ class MarchBudgetTest {
                         ('owner-a', '2025-11', 30000, 3000, 1),
                         ('owner-a', '2026-02', 0, 0, 1),
                         ('owner-a', '2026-05', 50000, 5000, 1),
-                        ('owner-a', '2026-06', 0, 0, 0),
+                        ('owner-a', '2026-06', 0, 0, 2),
                         ('owner-a', '2026-10', 40000, 4000, 1),
                         ('owner-a', '2026-11', 90000, 9000, 1),
                         ('owner-b', '2026-08', 90000, 9000, 1)
@@ -435,6 +443,7 @@ class MarchBudgetTest {
                         ('owner-a', '2026-05', 'food', 0, 50000, 1),
                         ('owner-a', '2026-06', 'food', 10000, 0, 0),
                         ('owner-a', '2026-06', 'travel', 10000, 0, 0),
+                        ('owner-a', '2026-07', 'food', 9000, 0, 0),
                         ('owner-a', '2026-10', 'food', 0, 40000, 1),
                         ('owner-a', '2026-10', 'health', 0, 0, 1),
                         ('owner-a', '2026-11', 'food', 0, 90000, 1)
@@ -462,6 +471,7 @@ class MarchBudgetTest {
             Document month = reviewPage(mvc, "/months/2026-06?edit=true");
             assertThat(month.expectFirst("#amount-travel").val()).isEmpty();
             var fields = monthFields(month);
+            assertThat(fields).containsEntry("income", "").containsEntry("contributions", "");
             fields.put("amount-travel", "0");
             var request = post("/months/2026-06").principal(() -> "owner-a");
             fields.forEach(request::param);
@@ -470,6 +480,43 @@ class MarchBudgetTest {
             assertThat(updated.expectFirst("#row-travel [data-label=Среднее]").text()).isEqualTo("0 ₽ 1 из 12 мес.");
             assertThat(updated.expectFirst("#row-food [data-label=Среднее]").text()).isEqualTo("30 000 ₽ 4 из 12 мес.");
             assertThat(updated.expectFirst("#average-spending").text()).isEqualTo("24 000 ₽ 5 из 12 мес.");
+
+            assertThat(updated.expectFirst("#average-income").text()).isEqualTo("30 000 ₽ 4 из 12 мес.");
+            assertThat(updated.expectFirst("#average-contributions").text()).isEqualTo("3 000 ₽ 4 из 12 мес.");
+
+            Document planOnly = reviewPage(mvc, "/history/2026-07");
+            assertThat(planOnly.expectFirst("#income").val()).isEmpty();
+            assertThat(planOnly.expectFirst("#contributions").val()).isEmpty();
+            mvc.perform(post("/history/2026-07").principal(() -> "owner-a")
+                    .param("revision", revision(planOnly))
+                    .param("planRevision", planOnly.expectFirst("input[name=planRevision]").val())
+                    .param("income", "").param("contributions", "").param("plan-food", "10000"))
+                    .andExpect(status().isFound());
+            assertThat(reviewPage(mvc, "/history/2026-07").expectFirst("#plan-food").val()).isEqualTo("10 000");
+            updated = reviewPage(mvc, "/years/2026");
+            assertThat(updated.expectFirst("#average-income").text()).isEqualTo("30 000 ₽ 4 из 12 мес.");
+            assertThat(updated.expectFirst("#average-contributions").text()).isEqualTo("3 000 ₽ 4 из 12 мес.");
+            assertThat(updated.expectFirst("#average-spending").text()).isEqualTo("24 000 ₽ 5 из 12 мес.");
+
+            month = reviewPage(mvc, "/months/2026-06?edit=true");
+            fields = monthFields(month);
+            fields.put("income", "0");
+            var zeroIncome = post("/months/2026-06").principal(() -> "owner-a");
+            fields.forEach(zeroIncome::param);
+            mvc.perform(zeroIncome).andExpect(status().isFound());
+            updated = reviewPage(mvc, "/years/2026");
+            assertThat(updated.expectFirst("#average-income").text()).isEqualTo("24 000 ₽ 5 из 12 мес.");
+            assertThat(updated.expectFirst("#average-contributions").text()).isEqualTo("3 000 ₽ 4 из 12 мес.");
+
+            planOnly = reviewPage(mvc, "/history/2026-07");
+            mvc.perform(post("/history/2026-07").principal(() -> "owner-a")
+                    .param("revision", revision(planOnly))
+                    .param("planRevision", planOnly.expectFirst("input[name=planRevision]").val())
+                    .param("income", "").param("contributions", "0").param("plan-food", "10000"))
+                    .andExpect(status().isFound());
+            updated = reviewPage(mvc, "/years/2026");
+            assertThat(updated.expectFirst("#average-income").text()).isEqualTo("24 000 ₽ 5 из 12 мес.");
+            assertThat(updated.expectFirst("#average-contributions").text()).isEqualTo("2 400 ₽ 5 из 12 мес.");
 
             Document empty = reviewPage(mvc, "/years/2024");
             assertThat(empty.expectFirst("#average-period").text()).isEqualTo("Январь 2024 — Декабрь 2024");
@@ -704,7 +751,7 @@ class MarchBudgetTest {
             assertThat(draft.expectFirst("#plan-food").val()).isEqualTo("22 000");
             assertThat(draft.expectFirst("#amount-food").val()).isEqualTo("24 000");
             assertThat(draft.select(".history-share").eachText()).hasSize(10).containsOnly("—");
-            assertThat(draft.expectFirst("#income").val()).isEqualTo("0");
+            assertThat(draft.expectFirst("#income").val()).isEmpty();
             assertThat(owner.saveHistory(draft, Map.of("amount-food", "36 000", "contributions", "2500")).status())
                     .isEqualTo(302);
             assertThat(owner.saveHistory(draft, Map.of("amount-food", "48000")).status()).isEqualTo(409);
@@ -872,7 +919,7 @@ class MarchBudgetTest {
                     """).update();
             var decemberAmounts = Map.of(planKey, "10000", actualKey, "23994", "income", "60000");
             assertThat(owner.saveHistory(draft, decemberAmounts).status()).isEqualTo(500);
-            assertThat(owner.get(december).html().expectFirst("#income").val()).isEqualTo("0");
+            assertThat(owner.get(december).html().expectFirst("#income").val()).isEmpty();
             assertThat(owner.get(december).html().expectFirst("#" + planKey).val()).isEmpty();
             assertThat(owner.get(MARCH).html().expectFirst(row + " .plan").text()).isEqualTo("1 001 ₽");
             assertThat(owner.get(MARCH).html().expectFirst(row + " .buffer").text()).isEqualTo("−2 006 ₽");
