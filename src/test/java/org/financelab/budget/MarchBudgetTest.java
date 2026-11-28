@@ -390,6 +390,35 @@ class MarchBudgetTest {
     }
 
     @Test
+    void periodPickersUseAutomaticNavigationAndKeepEditorPrompts() throws Exception {
+        try (var app = start()) {
+            var owner = signedIn(app, "owner-a");
+            for (var route : Map.of(EDIT, "/months", "/history/2027-02", "/history",
+                    "/years/2027", "/years", "/investments/2027-03", "/investments").entrySet()) {
+                var page = owner.get(route.getKey()).html();
+                var picker = page.expectFirst("#period-picker");
+                assertThat(page.select("script[defer][src=/period-picker.js]")).hasSize(1);
+                assertThat(picker.attr("action")).isEqualTo(route.getValue());
+                assertThat(picker.attr("method")).isEqualTo("get");
+                assertThat(picker.select("button, input[type=submit]")).isEmpty();
+                var year = picker.expectFirst("input[name=year][inputmode=numeric][required]");
+                assertThat(year.attr("pattern")).isEqualTo("[0-9]{4}");
+                assertThat(year.val()).isEqualTo("2027");
+                if (!route.getValue().equals("/years")) {
+                    assertThat(picker.select("select[name=month] option")).hasSize(12);
+                }
+                if (route.getValue().equals("/history")) {
+                    assertThat(picker.attr("data-latest-period")).isEqualTo("2027-02");
+                }
+                if (route.getKey().equals(EDIT) || route.getValue().equals("/history")) {
+                    assertThat(page.select("#unsaved-dialog button").eachAttr("value"))
+                            .contains("stay", "discard", "save");
+                }
+            }
+        }
+    }
+
+    @Test
     void pastYearCountsMissingMonthsAndJanuaryHasNoAverage() throws Exception {
         try (var app = start(true, "2028-01")) {
             var owner = signedIn(app, "owner-a");

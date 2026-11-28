@@ -141,15 +141,8 @@ function initMonthForm() {
     });
 
     picker.addEventListener("submit", event => {
-        const sameYear = Number(picker.elements.year.value) === Number(picker.elements.year.defaultValue);
-        const sameMonth = picker.elements.month.selectedOptions[0].defaultSelected;
-        if (sameYear && sameMonth) {
-            event.preventDefault();
-        } else {
-            const target = new URL(picker.action);
-            target.search = new URLSearchParams(new FormData(picker)).toString();
-            confirmNavigation(event, target);
-        }
+        if (event.defaultPrevented) return;
+        confirmNavigation(event, periodPickerDestination(picker));
     });
 
     yearLink.onclick = event => {

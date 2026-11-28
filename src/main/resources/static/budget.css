@@ -34,7 +34,6 @@ aside strong, .selected { display: block; padding: .55rem 1.1rem; }
 .period-picker label, .actual-field { display: grid; gap: .2rem; }
 .period-picker select { min-height: 44px; font: inherit; border: 1px solid #79747e; border-radius: .35rem; background: white; color: inherit; }
 .period-picker input { width: 5.5rem; }
-.period-picker button { padding-inline: .75rem; }
 section { margin-top: 1.6rem; }
 .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
 .report-plan { grid-template-columns: repeat(2, minmax(0, 1fr)); }

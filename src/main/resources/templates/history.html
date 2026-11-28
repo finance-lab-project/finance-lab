@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ввод истории · Finance Lab</title>
     <link rel="stylesheet" th:href="@{/budget.css}">
+    <script defer th:src="@{/period-picker.js}"></script>
     <script defer th:src="@{/month.js}"></script>
 </head>
 <body>
@@ -26,7 +27,8 @@
         <div class="period-bar">
             <div>
                 <h1>Ввод истории</h1>
-                <form id="period-picker" class="period-picker" th:action="@{/history}" method="get">
+                <form id="period-picker" class="period-picker" th:action="@{/history}" method="get"
+                      th:data-latest-period="${current.minusMonths(1)}">
                     <label>Месяц
                         <select name="month">
                             <option th:each="name, i : ${months}" th:value="${i.count}" th:text="${name}"
@@ -34,10 +36,9 @@
                         </select>
                     </label>
                     <label>Год
-                        <input name="year" type="number" min="1" th:max="${current.minusMonths(1).year}"
-                               required th:value="${period.year}">
+                        <input name="year" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}"
+                               required th:value="${#numbers.formatInteger(period.year, 4)}">
                     </label>
-                    <button type="submit" class="text-button">Перейти</button>
                 </form>
             </div>
             <div class="actions">
