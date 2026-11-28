@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS category_month (
 ) STRICT;
 
 -- Actual-only rows retain their plan snapshot for balances, without defining a rate.
+-- Older databases stored a blank historical rate and an explicit zero identically.
+-- Keep each unmarked legacy rate, including zero, until the owner corrects it.
 CREATE TABLE IF NOT EXISTS category_month_inherited_plan (
     owner TEXT NOT NULL,
     period TEXT NOT NULL,

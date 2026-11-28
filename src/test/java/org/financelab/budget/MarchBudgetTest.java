@@ -617,6 +617,35 @@ class MarchBudgetTest {
     }
 
     @Test
+    void upgradeKeepsAmbiguousLegacyZeroRateUntilOwnerCorrectsIt() throws Exception {
+        var december = YearMonth.of(2027, 12);
+        try (var app = startCashTest(december.toString())) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("DROP TABLE category_month_inherited_plan").update();
+            jdbc.sql("""
+                    INSERT INTO category_month (owner, period, category, plan, actual, revision) VALUES
+                        ('owner-a', '2027-08', 'food', 0, 500, 1),
+                        ('owner-a', '2027-11', 'food', 30000, 0, 0),
+                        ('owner-a', '2027-12', 'food', 30000, 0, 0)
+                    """).update();
+        }
+        try (var app = startCashTest(december.toString())) {
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.readYear("owner-a", 2027, december).spendingPlan()).isEqualTo(BigInteger.valueOf(60000));
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/history/2027-08").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-food").val()).isEqualTo("0");
+            cashPost(mvc, form, Map.of("plan-food", "30000")).andExpect(status().isFound());
+        }
+        try (var app = startCashTest(december.toString())) {
+            var report = app.getBean(MonthStore.class).readYear("owner-a", 2027, december);
+            assertThat(report.spendingPlan()).isEqualTo(BigInteger.valueOf(360000));
+            assertThat(report.categories()).singleElement().satisfies(food ->
+                    assertThat(food.actual()).isEqualTo(BigInteger.valueOf(500)));
+        }
+    }
+
+    @Test
     void earlierActualDoesNotMoveReservedCategoryInception() throws Exception {
         try (var app = startCashTest("2027-08")) {
             var jdbc = app.getBean(JdbcClient.class);
