@@ -1035,7 +1035,7 @@ class MarchBudgetTest {
                 assertThat(leisure.plan()).isEqualTo(report.spendingPlan());
                 assertThat(leisure.actual()).isZero();
             });
-            assertThat(report.totalBuffer()).isZero();
+            assertThat(report.totalBuffer()).isEqualTo(BigInteger.valueOf(35000 - 24000));
             assertThat(jdbc.sql("SELECT count(*) FROM category_month").query(Integer.class).single()).isEqualTo(1);
 
             var plans = app.getBean(PlanStore.class);
