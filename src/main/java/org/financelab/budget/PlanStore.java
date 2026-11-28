@@ -146,12 +146,14 @@ class PlanStore {
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """).params(owner, since, code, row.name().strip(), row.group(), i + 1, row.unit(), row.value(), rubles).update();
             if (recordMonth) {
-                jdbc.sql("DELETE FROM category_month_inherited_plan WHERE owner = ? AND period = ? AND category = ?")
-                        .params(owner, since, code).update();
                 jdbc.sql("""
                         INSERT INTO category_month (owner, period, category, plan, actual) VALUES (?, ?, ?, ?, 0)
                         ON CONFLICT(owner, period, category) DO UPDATE SET plan = excluded.plan
                         """).params(owner, since, code, rubles).update();
+                jdbc.sql("""
+                        INSERT INTO category_month_inherited_plan (owner, period, category) VALUES (?, ?, ?)
+                        ON CONFLICT DO NOTHING
+                        """).params(owner, since, code).update();
             }
             if (refreshInherited) {
                 // An explicit rate supersedes the calculated setting for inherited rows that follow it.
@@ -164,12 +166,12 @@ class PlanStore {
                            AND NOT EXISTS (
                                SELECT 1 FROM category_month m
                                 WHERE m.owner = category_month.owner AND m.category = category_month.category
-                                  AND m.period BETWEEN ? AND category_month.period AND NOT ?
+                                  AND m.period BETWEEN ? AND category_month.period
                                   AND NOT EXISTS (SELECT 1 FROM category_month_inherited_plan i
                                                    WHERE i.owner = m.owner AND i.period = m.period
                                                      AND i.category = m.category)
                            )
-                        """).params(rubles, owner, since, code, rubles, since, recordMonth).update();
+                        """).params(rubles, owner, since, code, rubles, since).update();
             }
         }
     }

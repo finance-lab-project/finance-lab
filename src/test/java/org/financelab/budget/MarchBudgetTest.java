@@ -1226,11 +1226,6 @@ class MarchBudgetTest {
     void correctingPreviousYearRecalculatesCurrentAndFuturePlansAndKeepsPastSnapshots() throws Exception {
         String december = "/history/2026-12";
         try (var app = start()) {
-            // Recalculation can refresh these snapshots because they inherit their rates.
-            app.getBean(JdbcClient.class).sql("""
-                    INSERT INTO category_month_inherited_plan (owner, period, category)
-                    SELECT owner, period, category FROM category_month WHERE owner = 'owner-a' AND period = '2027-03'
-                    """).update();
             var owner = signedIn(app, "owner-a");
             assertThat(owner.get(MARCH).html().expectFirst("aside a[href^=/history]").text()).isEqualTo("Ввод истории");
             assertThat(owner.get("/history?year=2027&month=3").status()).isEqualTo(400);
@@ -1354,11 +1349,6 @@ class MarchBudgetTest {
                     new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "60"),
                     new PlanDraft.Row("", "Поездки", "discretionary", "poolPercent", "40")));
             assertThat(owner.plan(owner.get("/settings").html(), draft).status()).isEqualTo(204);
-            // Recalculation can refresh these snapshots because they inherit their rates.
-            app.getBean(JdbcClient.class).sql("""
-                    INSERT INTO category_month_inherited_plan (owner, period, category)
-                    SELECT owner, period, category FROM category_month WHERE owner = 'owner-a' AND period = '2027-03'
-                    """).update();
             String food = settingsDraft(owner.get("/settings").html()).rows().getFirst().code();
             String december = "/history/2026-12";
             assertThat(owner.get(MARCH).html().expectFirst("#row-" + food + " .plan").text()).isEqualTo("40 ₽");
@@ -1413,11 +1403,6 @@ class MarchBudgetTest {
             var leisure = new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "100");
             assertThat(owner.plan(settings, new PlanDraft("10000", "incomePercent", "40", List.of(food, health, leisure)))
                     .status()).isEqualTo(204);
-            // Recalculation can refresh these snapshots because they inherit their rates.
-            app.getBean(JdbcClient.class).sql("""
-                    INSERT INTO category_month_inherited_plan (owner, period, category)
-                    SELECT owner, period, category FROM category_month WHERE owner = 'owner-a' AND period = '2027-03'
-                    """).update();
             String code = settingsDraft(owner.get("/settings").html()).rows().getFirst().code();
             String planKey = "plan-" + code;
             String actualKey = "amount-" + code;

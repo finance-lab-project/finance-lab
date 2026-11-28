@@ -1,13 +1,14 @@
 -- Recorded plans and actuals from the worked example. Both owners start independently.
+-- Capture which owners are seeded in this run before inserting their monthly rows.
+CREATE TEMP TABLE demo_new_owners AS
+WITH accounts(name) AS (VALUES ('owner-a'), ('owner-b'))
+SELECT name FROM accounts a
+ WHERE NOT EXISTS (SELECT 1 FROM planning_settings p WHERE p.owner = a.name)
+   AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = a.name)
+   AND NOT EXISTS (SELECT 1 FROM month_actuals m WHERE m.owner = a.name);
+
 WITH RECURSIVE
     months_2026(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM months_2026 WHERE n < 12),
-    accounts(name) AS (VALUES ('owner-a'), ('owner-b')),
-    owners(name) AS MATERIALIZED (
-        SELECT name FROM accounts a
-         WHERE NOT EXISTS (SELECT 1 FROM planning_settings p WHERE p.owner = a.name)
-           AND NOT EXISTS (SELECT 1 FROM category_month m WHERE m.owner = a.name)
-           AND NOT EXISTS (SELECT 1 FROM month_actuals m WHERE m.owner = a.name)
-    ),
     fixture(period, category, plan, actual) AS (
         SELECT printf('2026-%02d', n), 'food',
                CASE WHEN n = 12 THEN 22000 ELSE 24000 END, 24000 FROM months_2026
@@ -23,8 +24,15 @@ WITH RECURSIVE
     )
 INSERT INTO category_month (owner, period, category, plan, actual)
 SELECT owners.name, fixture.period, fixture.category, fixture.plan, fixture.actual
-FROM fixture CROSS JOIN owners WHERE true
+FROM fixture CROSS JOIN demo_new_owners owners WHERE true
 ON CONFLICT (owner, period, category) DO NOTHING;
+
+-- February and March use January's settings. Keep those snapshots tied to the settings.
+INSERT INTO category_month_inherited_plan (owner, period, category)
+SELECT m.owner, m.period, m.category FROM category_month m JOIN demo_new_owners o ON o.name = m.owner
+ WHERE m.period IN ('2027-02', '2027-03');
+
+DROP TABLE temp.demo_new_owners;
 
 -- Include existing walkthrough databases. The reserved food key identifies the demo months.
 WITH figures(period, income, contributions) AS (VALUES

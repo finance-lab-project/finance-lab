@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS category_month (
     PRIMARY KEY (owner, period, category)
 ) STRICT;
 
--- Actual-only rows retain their plan snapshot for balances, without defining a rate.
+-- Actual-only and settings-derived rows retain their plan snapshots for balances.
+-- The settings or a historical rate determines the annual projection.
 -- Older databases stored a blank historical rate and an explicit zero identically.
 -- Keep each unmarked legacy rate, including zero, until the owner corrects it.
 CREATE TABLE IF NOT EXISTS category_month_inherited_plan (
