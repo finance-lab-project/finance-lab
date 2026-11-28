@@ -834,7 +834,7 @@ class MarchBudgetTest {
     }
 
     @Test
-    void januaryRolloverPreservesExplicitLegacyZero() {
+    void januaryRolloverAndHistoryCorrectionPreserveExplicitLegacyZero() throws Exception {
         YearMonth january = YearMonth.of(2028, 1);
         try (var app = start(false, january.toString())) {
             var jdbc = app.getBean(JdbcClient.class);
@@ -845,15 +845,31 @@ class MarchBudgetTest {
                     """).update();
             jdbc.sql("""
                     INSERT INTO category_month (owner, period, category, plan, actual)
-                    VALUES ('owner-a', '2028-01', 'food', 0, 0)
+                    VALUES ('owner-a', '2027-12', 'food', 30000, 120000),
+                           ('owner-a', '2028-01', 'food', 0, 2300)
                     """).update();
 
-            var report = app.getBean(MonthStore.class).readYear("owner-a", 2028, january);
+            var store = app.getBean(MonthStore.class);
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan()).isZero();
+
+            var owner = signedIn(app, "owner-a");
+            String december = "/history/2027-12";
+            assertThat(owner.saveHistory(owner.get(december).html(), Map.of("amount-food", "144000")).status())
+                    .isEqualTo(302);
+            assertThat(app.getBean(PlanStore.class).read("owner-a", january).draft().rows())
+                    .singleElement().satisfies(food -> assertThat(food.value()).isEqualTo("12000"));
+
+            var report = store.readYear("owner-a", 2028, january);
+            assertThat(report.categories()).singleElement().satisfies(food -> {
+                assertThat(food.plan()).isZero();
+                assertThat(food.actual()).isEqualTo(BigInteger.valueOf(2300));
+            });
             assertThat(report.spendingPlan()).isZero();
             assertThat(jdbc.sql("""
-                    SELECT plan FROM category_month
+                    SELECT plan, actual FROM category_month
                      WHERE owner = 'owner-a' AND period = '2028-01' AND category = 'food'
-                    """).query(Long.class).single()).isZero();
+                    """).query((rs, i) -> List.of(rs.getLong(1), rs.getLong(2))).single())
+                    .containsExactly(0L, 2300L);
         }
     }
 
@@ -1210,6 +1226,11 @@ class MarchBudgetTest {
     void correctingPreviousYearRecalculatesCurrentAndFuturePlansAndKeepsPastSnapshots() throws Exception {
         String december = "/history/2026-12";
         try (var app = start()) {
+            // Recalculation can refresh these snapshots because they inherit their rates.
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month_inherited_plan (owner, period, category)
+                    SELECT owner, period, category FROM category_month WHERE owner = 'owner-a' AND period = '2027-03'
+                    """).update();
             var owner = signedIn(app, "owner-a");
             assertThat(owner.get(MARCH).html().expectFirst("aside a[href^=/history]").text()).isEqualTo("Ввод истории");
             assertThat(owner.get("/history?year=2027&month=3").status()).isEqualTo(400);
@@ -1333,6 +1354,11 @@ class MarchBudgetTest {
                     new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "60"),
                     new PlanDraft.Row("", "Поездки", "discretionary", "poolPercent", "40")));
             assertThat(owner.plan(owner.get("/settings").html(), draft).status()).isEqualTo(204);
+            // Recalculation can refresh these snapshots because they inherit their rates.
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month_inherited_plan (owner, period, category)
+                    SELECT owner, period, category FROM category_month WHERE owner = 'owner-a' AND period = '2027-03'
+                    """).update();
             String food = settingsDraft(owner.get("/settings").html()).rows().getFirst().code();
             String december = "/history/2026-12";
             assertThat(owner.get(MARCH).html().expectFirst("#row-" + food + " .plan").text()).isEqualTo("40 ₽");
@@ -1387,6 +1413,11 @@ class MarchBudgetTest {
             var leisure = new PlanDraft.Row("", "Досуг", "discretionary", "poolPercent", "100");
             assertThat(owner.plan(settings, new PlanDraft("10000", "incomePercent", "40", List.of(food, health, leisure)))
                     .status()).isEqualTo(204);
+            // Recalculation can refresh these snapshots because they inherit their rates.
+            app.getBean(JdbcClient.class).sql("""
+                    INSERT INTO category_month_inherited_plan (owner, period, category)
+                    SELECT owner, period, category FROM category_month WHERE owner = 'owner-a' AND period = '2027-03'
+                    """).update();
             String code = settingsDraft(owner.get("/settings").html()).rows().getFirst().code();
             String planKey = "plan-" + code;
             String actualKey = "amount-" + code;
