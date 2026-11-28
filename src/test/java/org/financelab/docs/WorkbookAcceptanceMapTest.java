@@ -67,14 +67,28 @@ class WorkbookAcceptanceMapTest {
 
     @Test
     void annualRateExamplePreservesTheApprovedAllocationAndExplicitZero() throws IOException {
-        assertExampleContains("Annual spending/income · annual rate",
+        assertExampleContains("Annual spending/income · annual baseline and saved zero",
                 "366 RUB/year", "101 RUB monthly planning income", "50% investment target",
                 "monthly essential plan is 31 RUB", "investments round to 51 RUB",
                 "19 RUB splits into 11 RUB and 8 RUB at 60% and 40%",
-                "historical actuals remain 366 RUB", "draft retains the 366 RUB annual source amount",
+                "historical actuals remain 366 RUB", "The draft retains the 366 RUB annual source amount",
                 "explicitly saved 0 RUB expense and eleven unentered months",
                 "replace a 1,000 RUB manual baseline with 0",
-                "retains its 1,500 RUB baseline");
+                "retains its 1,500 RUB baseline",
+                "caps investments at 10,000 against a 20,000 target and leaves a zero pool",
+                "Income of 30,000 gives a 10,000 shortfall, zero investments and a zero pool");
+    }
+
+    @Test
+    void fireExampleDocumentsBothWindowBoundariesAndIncompleteMonths() throws IOException {
+        assertExampleContains("FIRE · observed capital and income progress",
+                "last completed Moscow month",
+                "later of the earliest selected-account record on or before that end and the first month of the trailing 12-month window",
+                "22,500 RUB/month while October is incomplete", "22.5% progress",
+                "Recording October as zero changes the average to 15,000 RUB/month and progress to 15%",
+                "November 2025 through October 2026 total 180,000 RUB",
+                "every month in that window is incomplete",
+                "the average and progress are omitted");
     }
 
     @Test
@@ -97,7 +111,7 @@ class WorkbookAcceptanceMapTest {
 
     private void assertExampleContains(String metric, String... expected) throws IOException {
         String row = Files.readAllLines(MAP).stream()
-                .filter(line -> line.startsWith("| " + metric))
+                .filter(line -> line.startsWith("| " + metric + " |"))
                 .findFirst().orElseThrow(() -> new AssertionError("Missing example: " + metric));
         for (String fragment : expected) {
             assertTrue(row.contains(fragment), () -> metric + " should include: " + fragment);
