@@ -2,6 +2,9 @@ package org.financelab.budget;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -51,6 +54,20 @@ record MonthActuals(long income, long contributions, Map<String, Long> spending)
             errors.put(key, invalid.getMessage());
             return 0;
         }
+    }
+
+    static LocalDate correctionDate(YearMonth month, LocalDate referenceDate, Map<String, String> draft,
+                                    Map<String, String> errors) {
+        String value = draft.getOrDefault("correctionDate", "");
+        if (value.isBlank()) return null;
+        try {
+            LocalDate date = LocalDate.parse(value);
+            if (referenceDate != null && YearMonth.from(date).equals(month) && date.isBefore(referenceDate)) return date;
+        } catch (DateTimeParseException invalid) {
+            // Report the same field error for malformed and out-of-range dates.
+        }
+        errors.put("correctionDate", "Укажите дату в этом месяце до даты сверки.");
+        return null;
     }
 
     static long fromPercent(String text, long planningIncome) {

@@ -3,6 +3,7 @@ package org.financelab.budget;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -10,9 +11,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Reads and replaces one owner's committed monthly figures. */
 @Repository
@@ -23,6 +26,95 @@ class MonthStore {
         public String percent(long amount) {
             return figures.income() == 0 ? "—" : PlanCalculator.displayedPercent(amount, figures.income()) + " %";
         }
+    }
+
+    record Cash(LocalDate date, long cardBalance, BigInteger opening, BigInteger balance) {}
+    private record Reference(LocalDate date, long cardBalance, BigInteger legacyLaterMovement) {}
+
+    @Transactional
+    public void reconcile(String owner, LocalDate date, long cardBalance) {
+        // Before an owner's first snapshot, past-month entries belong to their budget month.
+        // Keep the day for same-month entries and preserve new movements after the snapshot.
+        jdbc.sql("""
+                UPDATE cash_movement
+                   SET effective_date = date(period || '-01', '+1 month', '-1 day')
+                 WHERE owner = :owner AND substr(effective_date, 1, 7) > period
+                   AND NOT EXISTS (SELECT 1 FROM cash_reconciliation WHERE owner = :owner)
+                """).param("owner", owner).update();
+        // Older databases have only an aggregate for edits after the original reference.
+        jdbc.sql("""
+                INSERT INTO cash_movement (owner, period, effective_date, amount)
+                SELECT owner, substr(reference_date, 1, 7), date(reference_date, '+1 day'), later_movement
+                  FROM cash_reconciliation WHERE owner = ? AND later_movement <> '0'
+                """).param(owner).update();
+        jdbc.sql("""
+                INSERT INTO cash_reconciliation (owner, reference_date, card_balance, later_movement)
+                VALUES (?, ?, ?, '0')
+                ON CONFLICT (owner) DO UPDATE SET reference_date = excluded.reference_date,
+                    card_balance = excluded.card_balance, later_movement = '0'
+                """).params(owner, date.toString(), cardBalance).update();
+    }
+
+    @Transactional(readOnly = true)
+    public Cash cash(String owner, YearMonth month) {
+        var reference = reference(owner).orElse(null);
+        if (reference == null) return null;
+        YearMonth referenceMonth = YearMonth.from(reference.date());
+        if (month.isBefore(referenceMonth)) return null;
+        BigInteger throughReferenceMonth = movement(owner, referenceMonth);
+        BigInteger laterMovement = jdbc.sql("""
+                SELECT amount FROM cash_movement WHERE owner = ? AND period <= ? AND effective_date > ?
+                """).params(owner, referenceMonth.toString(), reference.date().toString())
+                .query((rs, i) -> new BigInteger(rs.getString(1))).list().stream()
+                .reduce(BigInteger.ZERO, BigInteger::add);
+        BigInteger opening = BigInteger.valueOf(reference.cardBalance())
+                .subtract(throughReferenceMonth).add(laterMovement).add(reference.legacyLaterMovement());
+        BigInteger throughMonth = month.equals(referenceMonth) ? throughReferenceMonth : movement(owner, month);
+        return new Cash(reference.date(), reference.cardBalance(), opening, opening.add(throughMonth));
+    }
+
+    LocalDate reconciliationDate(String owner) {
+        return reference(owner).map(Reference::date).orElse(null);
+    }
+
+    private Optional<Reference> reference(String owner) {
+        return jdbc.sql("SELECT reference_date, card_balance, later_movement FROM cash_reconciliation WHERE owner = ?")
+                .param(owner).query((rs, i) -> new Reference(LocalDate.parse(rs.getString(1)), rs.getLong(2),
+                        new BigInteger(rs.getString(3)))).optional();
+    }
+
+    private BigInteger movement(String owner, YearMonth through) {
+        return jdbc.sql("""
+                SELECT income, contributions FROM month_actuals WHERE owner = :owner AND period <= :period
+                UNION ALL
+                SELECT 0, actual FROM category_month WHERE owner = :owner AND period <= :period
+                """).param("owner", owner).param("period", through.toString())
+                .query((rs, i) -> net(rs.getLong(1), rs.getLong(2))).list().stream()
+                .reduce(BigInteger.ZERO, BigInteger::add);
+    }
+
+    private static BigInteger net(long income, long outflow) {
+        return BigInteger.valueOf(income).subtract(BigInteger.valueOf(outflow));
+    }
+
+    private void trackMovement(String owner, YearMonth month, LocalDate correction, BigInteger change) {
+        LocalDate referenceDate = reconciliationDate(owner);
+        if (correction != null && (referenceDate == null || !correction.isBefore(referenceDate))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Дата сверки изменилась.");
+        }
+        if (change.signum() == 0) return;
+
+        LocalDate effectiveDate = correction;
+        if (effectiveDate == null) {
+            LocalDate today = period.todayInMoscow();
+            effectiveDate = today;
+            // A save on the reference day follows the already recorded card snapshot.
+            if (today.equals(referenceDate)) {
+                effectiveDate = effectiveDate.plusDays(1);
+            }
+        }
+        jdbc.sql("INSERT INTO cash_movement (owner, period, effective_date, amount) VALUES (?, ?, ?, ?)")
+                .params(owner, month.toString(), effectiveDate.toString(), change.toString()).update();
     }
 
     private final PlanStore plans;
@@ -137,22 +229,32 @@ class MonthStore {
 
     @Transactional
     public boolean replace(String owner, YearMonth month, MonthBudget saved, long revision, MonthActuals actuals) {
+        return replace(owner, month, saved, revision, actuals, null);
+    }
+
+    @Transactional
+    public boolean replace(String owner, YearMonth month, MonthBudget saved, long revision, MonthActuals actuals,
+                           LocalDate correction) {
         boolean changed = actuals.income() != saved.figures().income()
                 || actuals.contributions() != saved.figures().contributions()
                 || saved.categories().stream().anyMatch(row -> row.actual() != actuals.spending().get(row.code()));
         var figures = new MonthBudget.Figures(actuals.income(), actuals.contributions(), changed ? revision + 1 : revision);
         if (!claim(owner, month, month, revision, saved.planRevision(), figures)) return false;
 
+        BigInteger change = net(actuals.income(), actuals.contributions())
+                .subtract(net(saved.figures().income(), saved.figures().contributions()));
         for (var row : saved.categories()) {
+            change = change.add(net(row.actual(), actuals.spending().get(row.code())));
             saveCategory(owner, month, row.code(), row.plan(), actuals.spending().get(row.code()), false, 0);
         }
+        trackMovement(owner, month, correction, change);
         if (changed) refreshPlan(owner, month, period.current());
         return true;
     }
 
     @Transactional
     public boolean replaceHistory(String owner, YearMonth month, History saved, long income, long contributions,
-                                  List<HistoricalEdit> categories) {
+                                  List<HistoricalEdit> categories, LocalDate correction) {
         YearMonth current = period.current();
         long revision = saved.figures().revision();
         var figures = new MonthBudget.Figures(income, contributions, revision + 1);
@@ -161,6 +263,12 @@ class MonthStore {
             int initialRevision = row.actualProvided() ? 1 : 0;
             saveCategory(owner, month, row.code(), row.plan(), row.actual(), true, initialRevision);
         }
+        BigInteger change = net(income, contributions).subtract(net(saved.figures().income(), saved.figures().contributions()));
+        change = change.add(saved.categories().stream().map(row -> BigInteger.valueOf(row.actual()))
+                .reduce(BigInteger.ZERO, BigInteger::add));
+        change = change.subtract(categories.stream().map(row -> BigInteger.valueOf(row.actual()))
+                .reduce(BigInteger.ZERO, BigInteger::add));
+        trackMovement(owner, month, correction, change);
         refreshPlan(owner, month, current);
         return true;
     }
