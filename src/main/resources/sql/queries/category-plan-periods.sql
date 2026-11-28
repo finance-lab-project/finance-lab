@@ -11,8 +11,7 @@ WITH first_settings AS (
 ), inception AS (
     SELECT f.category, f.start FROM first_settings f
      WHERE f.category NOT IN ('housing', 'food', 'health', 'leisure', 'travel')
-        OR (f.start > (SELECT min(since) FROM planning_settings WHERE owner = :owner)
-            AND NOT EXISTS (SELECT 1 FROM monthly_rates h WHERE h.category = f.category AND h.period < f.start))
+        OR f.start > (SELECT min(since) FROM planning_settings WHERE owner = :owner)
 ), rates AS (
     SELECT category, period, plan FROM monthly_rates
     UNION ALL

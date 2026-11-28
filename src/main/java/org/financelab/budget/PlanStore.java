@@ -129,18 +129,16 @@ class PlanStore {
                                 boolean recordMonth, boolean refreshInherited) {
         PlanDraft draft = plan.draft();
         Map<String, Long> previousRates = new HashMap<>();
-        if (!recordMonth) {
-            jdbc.sql("""
-                    SELECT p.category, p.plan FROM planning_category p
-                     WHERE p.owner = :owner AND p.since = (
-                         SELECT max(since) FROM planning_category WHERE owner = :owner AND since <= :since
-                     ) AND (p.since < :since OR EXISTS (
-                         SELECT 1 FROM planning_category_rollover_copy c WHERE c.owner = p.owner
-                           AND c.since = p.since AND c.category = p.category
-                     ))
-                    """).param("owner", owner).param("since", since)
-                    .query(rs -> { previousRates.put(rs.getString("category"), rs.getLong("plan")); });
-        }
+        jdbc.sql("""
+                SELECT p.category, p.plan FROM planning_category p
+                 WHERE p.owner = :owner AND p.since = (
+                     SELECT max(since) FROM planning_category WHERE owner = :owner AND since <= :since
+                 ) AND ((p.since < :since AND NOT :recordMonth) OR EXISTS (
+                     SELECT 1 FROM planning_category_rollover_copy c WHERE c.owner = p.owner
+                       AND c.since = p.since AND c.category = p.category
+                 ) AND p.since = :since)
+                """).param("owner", owner).param("since", since).param("recordMonth", recordMonth)
+                .query(rs -> { previousRates.put(rs.getString("category"), rs.getLong("plan")); });
         jdbc.sql("DELETE FROM planning_category WHERE owner = ? AND since = ?").params(owner, since).update();
         for (int i = 0; i < draft.rows().size(); i++) {
             PlanDraft.Row row = draft.rows().get(i);

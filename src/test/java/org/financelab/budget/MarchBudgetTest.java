@@ -651,7 +651,7 @@ class MarchBudgetTest {
     }
 
     @Test
-    void earlierActualDoesNotMoveReservedCategoryInception() throws Exception {
+    void earlierHistoryDoesNotMoveReservedCategoryInception() throws Exception {
         try (var app = startCashTest("2027-08")) {
             var jdbc = app.getBean(JdbcClient.class);
             jdbc.sql("""
@@ -670,6 +670,15 @@ class MarchBudgetTest {
             assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
             assertThat(year.categories()).singleElement().satisfies(health -> {
                 assertThat(health.plan()).isEqualTo(year.spendingPlan());
+                assertThat(health.actual()).isEqualTo(BigInteger.valueOf(200));
+            });
+
+            form = reviewPage(mvc, "/history/2027-06").expectFirst("#history-form");
+            cashPost(mvc, form, Map.of("plan-health", "1000")).andExpect(status().isFound());
+            var updated = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 8));
+            assertThat(updated.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(updated.categories()).singleElement().satisfies(health -> {
+                assertThat(health.plan()).isEqualTo(updated.spendingPlan());
                 assertThat(health.actual()).isEqualTo(BigInteger.valueOf(200));
             });
         }
@@ -1102,8 +1111,18 @@ class MarchBudgetTest {
             var settings = plans.read("owner-a", january);
             assertThat(plans.save("owner-a", january, settings.revision(),
                     PlanCalculator.evaluate(settings.draft()))).isTrue();
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(35000));
             assertThat(store.readYear("owner-a", 2028, january).spendingPlan())
-                    .isEqualTo(BigInteger.valueOf(360000));
+                    .isEqualTo(BigInteger.valueOf(420000));
+
+            settings = plans.read("owner-a", january);
+            var draft = settings.draft();
+            var changed = new PlanDraft(draft.income(), draft.targetUnit(), draft.targetValue(),
+                    List.of(draft.rows().getFirst().withValue("amount", "28000")));
+            assertThat(plans.save("owner-a", january, settings.revision(), PlanCalculator.evaluate(changed))).isTrue();
+            assertThat(store.read("owner-a", january).totalPlan()).isEqualTo(BigInteger.valueOf(28000));
+            assertThat(store.readYear("owner-a", 2028, january).spendingPlan())
+                    .isEqualTo(BigInteger.valueOf(336000));
         }
     }
 
