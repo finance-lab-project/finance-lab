@@ -617,6 +617,31 @@ class MarchBudgetTest {
     }
 
     @Test
+    void earlierActualDoesNotMoveReservedCategoryInception() throws Exception {
+        try (var app = startCashTest("2027-08")) {
+            var jdbc = app.getBean(JdbcClient.class);
+            jdbc.sql("""
+                    INSERT INTO planning_settings VALUES ('owner-a', '2027-01', 100000, '0/1', 1),
+                                                         ('owner-a', '2027-07', 100000, '0/1', 2)
+                    """).update();
+            jdbc.sql("""
+                    INSERT INTO planning_category VALUES
+                        ('owner-a', '2027-07', 'health', 'Health', 'essential', 1, 'amount', '1000', 1000)
+                    """).update();
+            var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            var form = reviewPage(mvc, "/history/2027-06").expectFirst("#history-form");
+            assertThat(form.expectFirst("#plan-health").val()).isEmpty();
+            cashPost(mvc, form, Map.of("amount-health", "200")).andExpect(status().isFound());
+            var year = app.getBean(MonthStore.class).readYear("owner-a", 2027, YearMonth.of(2027, 8));
+            assertThat(year.spendingPlan()).isEqualTo(BigInteger.valueOf(6000));
+            assertThat(year.categories()).singleElement().satisfies(health -> {
+                assertThat(health.plan()).isEqualTo(year.spendingPlan());
+                assertThat(health.actual()).isEqualTo(BigInteger.valueOf(200));
+            });
+        }
+    }
+
+    @Test
     void firstSettingsSaveStartsNewCategoryInItsCreationMonth() {
         YearMonth july = YearMonth.of(2027, 7);
         try (var app = start(false, july.toString())) {
