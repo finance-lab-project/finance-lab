@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -142,28 +143,30 @@ class MarchBudgetTest {
     @Test
     void distinguishesEarlierMonthCorrectionsFromNewExpenses() throws Exception {
         try (var app = startCashTest("2027-03")) {
-            app.getBean(JdbcClient.class).sql("""
-                    INSERT INTO category_month (owner, period, category, plan, actual)
-                    VALUES ('owner-a', '2027-02', 'food', 60000, 50000)
-                    """).update();
+            var food = new PlanDraft.Row("", "Продукты", "essential", "amount", "60000");
+            var plan = PlanCalculator.evaluate(new PlanDraft("60000", "amount", "0", List.of(food)));
+            assertThat(app.getBean(PlanStore.class).save("owner-a", YearMonth.of(2027, 3), 0, plan)).isTrue();
             var mvc = MockMvcBuilders.webAppContextSetup((GenericWebApplicationContext) app).build();
+            String history = "/history/2027-02";
+            var initial = reviewPage(mvc, history).expectFirst("#history-form");
+            String spendingField = initial.expectFirst("input[name^=amount-]").attr("name");
+            cashPost(mvc, initial, Map.of(spendingField, "50000")).andExpect(status().isFound());
             var form = reviewPage(mvc, MARCH).expectFirst("#cash-reconciliation-form");
             var reconciliation = Map.of("referenceDate", "2027-03-15", "cardBalance", "100000");
             cashPost(mvc, form, reconciliation).andExpect(status().isFound());
             assertCash(reviewPage(mvc, MARCH), "150 000 ₽", "100 000 ₽");
 
-            String history = "/history/2027-02";
             var februaryForm = reviewPage(mvc, history).expectFirst("#history-form");
             var correctionDate = februaryForm.expectFirst("#correctionDate");
             assertThat(correctionDate.attr("min")).isEqualTo("2027-02-01");
             assertThat(correctionDate.attr("max")).isEqualTo("2027-02-28");
-            cashPost(mvc, februaryForm, Map.of("amount-food", "55000", "correctionDate", "2027-03-10"))
+            cashPost(mvc, februaryForm, Map.of(spendingField, "55000", "correctionDate", "2027-03-10"))
                     .andExpect(status().is(422));
-            cashPost(mvc, februaryForm, Map.of("amount-food", "55000", "correctionDate", "2027-02-10"))
+            cashPost(mvc, februaryForm, Map.of(spendingField, "55000", "correctionDate", "2027-02-10"))
                     .andExpect(status().isFound());
             assertCash(reviewPage(mvc, MARCH), "155 000 ₽", "100 000 ₽");
 
-            cashPost(mvc, reviewPage(mvc, history).expectFirst("#history-form"), Map.of("amount-food", "60000"))
+            cashPost(mvc, reviewPage(mvc, history).expectFirst("#history-form"), Map.of(spendingField, "60000"))
                     .andExpect(status().isFound());
             assertCash(reviewPage(mvc, MARCH), "155 000 ₽", "95 000 ₽");
             cashPost(mvc, form, reconciliation).andExpect(status().isFound());
